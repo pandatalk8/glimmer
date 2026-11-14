@@ -2,6 +2,16 @@
 
 一款 Chrome 沉浸式双语翻译扩展（Manifest V3）。网页段落下方直接插入译文，原文译文对照阅读；支持划词翻译、悬停翻译、输入框翻译和 YouTube 双语字幕。UI 参考 Trancy 的深色紫调风格。
 
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [配置指南](docs/configuration.md) | 各引擎 API Key 获取方式、全部设置项说明、导入导出、快捷键 |
+| [测试指南](docs/testing.md) | 自动化测试命令、手动测试清单、问题排查 |
+| [开发指南](docs/development.md) | 架构、消息协议、整页翻译实现、新增引擎步骤、调试与发布 |
+| [常见问题](docs/faq.md) | 安装使用、引擎报错、YouTube 字幕、隐私 |
+| [示例配置](docs/settings.example.json) | 可在设置页“导入设置”直接导入 |
+
 ## 功能
 
 | 功能 | 说明 |
@@ -65,7 +75,18 @@ popup/             弹窗
 options/           设置页
 styles/theme.css   共享主题
 icons/
+docs/              配置、测试、开发文档与示例配置
+tests/             e2e.py（Playwright 端到端测试）  fixtures/（测试页）
 ```
+
+## 测试
+
+```bash
+pip3 install playwright && python3 -m playwright install chromium
+python3 tests/e2e.py
+```
+
+手动测试清单见 [测试指南](docs/testing.md)。
 
 ## 工作原理
 

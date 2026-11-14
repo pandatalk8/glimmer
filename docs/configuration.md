@@ -1,0 +1,201 @@
+# 配置指南
+
+本文说明每个翻译引擎怎么拿到 API Key、设置页每一项的含义，以及如何批量导入配置。
+
+所有配置保存在浏览器本地的 `chrome.storage.local` 中，API Key 不会上传到任何服务器，只会在翻译时直接发送给对应的服务商。
+
+---
+
+## 一、翻译引擎配置
+
+打开方式：点击扩展图标 → 右上角齿轮 → “翻译服务”。每张卡片填写后点击“测试连接”，会用一句英文测试并显示耗时和译文。点击“设为默认”即可切换默认引擎。
+
+### Google 翻译（默认，免费）
+
+无需任何配置。使用 Google 的公开网页翻译接口，速度快、语言覆盖最广。
+
+> 该接口为非官方免费接口，高频使用时可能被临时限流（返回 429）。遇到这种情况，切换到其他引擎即可。
+
+### Microsoft 翻译（Azure Translator）
+
+| 字段 | 说明 |
+| --- | --- |
+| API Key | Azure Translator 资源的密钥 |
+| 区域 | 资源所在区域，如 `eastasia`；创建的是“全局（Global）”资源时可留空 |
+
+**获取方式：**
+
+**第一步，** 登录 [Azure 门户](https://portal.azure.com)，搜索“Translator”，创建资源。
+
+**第二步，** 定价层选择 **F0（免费）**，每月 200 万字符。
+
+**第三步，** 创建完成后进入“密钥和终结点”，复制“密钥 1”和“位置/区域”。
+
+### DeepL
+
+| 字段 | 说明 |
+| --- | --- |
+| API Key | DeepL API 密钥 |
+| 自定义 API 地址 | 可选。留空时自动判断：Key 以 `:fx` 结尾走 `api-free.deepl.com`，否则走 `api.deepl.com` |
+
+**获取方式：** 在 [DeepL API](https://www.deepl.com/pro-api) 注册 API Free 账户（每月 50 万字符，需绑定信用卡验证），在账户页“API Keys”中复制密钥。
+
+> 注意：DeepL 网页版的 Pro 订阅与 API 订阅是两个产品，网页版订阅不包含 API Key。
+
+### OpenAI GPT
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| API Key | — | 以 `sk-` 开头 |
+| API 地址 | `https://api.openai.com/v1` | 可替换为任意 OpenAI 兼容的代理地址 |
+| 模型 | `gpt-4.1-mini` | 下拉有常用模型，也可手动输入 |
+
+**获取方式：** [platform.openai.com/api-keys](https://platform.openai.com/api-keys) 创建密钥，账户需有余额。
+
+> 部分推理模型不支持自定义 temperature，扩展检测到相关报错后会自动去掉该参数重试。
+
+### Google Gemini
+
+| 字段 | 默认值 |
+| --- | --- |
+| API Key | — |
+| 模型 | `gemini-2.5-flash` |
+
+**获取方式：** 在 [Google AI Studio](https://aistudio.google.com/apikey) 点击“Create API key”，有免费额度。
+
+### DeepSeek
+
+| 字段 | 默认值 |
+| --- | --- |
+| API Key | — |
+| API 地址 | `https://api.deepseek.com` |
+| 模型 | `deepseek-chat` |
+
+**获取方式：** [platform.deepseek.com](https://platform.deepseek.com) 注册并充值后，在“API keys”中创建。翻译场景推荐 `deepseek-chat`，`deepseek-reasoner` 会先思考，速度慢很多。
+
+### Anthropic Claude
+
+| 字段 | 默认值 |
+| --- | --- |
+| API Key | — |
+| 模型 | `claude-haiku-5-5` |
+
+**获取方式：** [console.anthropic.com](https://console.anthropic.com) 的“API Keys”页面创建。网页翻译量大，推荐 Haiku（快且便宜）；对译文质量要求高时可选 Sonnet。
+
+### 自定义（OpenAI 兼容接口）
+
+任何实现了 `/chat/completions` 的服务都能接入。API 地址填到 `/v1` 为止即可，扩展会自动补全 `/chat/completions`（若已填完整路径则原样使用）。
+
+| 服务 | API 地址 | 模型示例 | 需要 Key |
+| --- | --- | --- | --- |
+| Ollama（本地） | `http://localhost:11434/v1` | `qwen2.5:7b` | 否 |
+| LM Studio（本地） | `http://localhost:1234/v1` | 加载的模型名 | 否 |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4.1-mini` | 是 |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | 是 |
+| Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` | 是 |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` | 是 |
+
+> 使用 Ollama 时需允许扩展跨域访问，启动前设置环境变量：`OLLAMA_ORIGINS="chrome-extension://*" ollama serve`。
+
+---
+
+## 二、设置项参考
+
+### 基本设置
+
+| 设置项 | 可选值 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 目标语言 | 19 种语言 | 简体中文 | 译文语言 |
+| 源语言 | 自动检测 / 指定语言 | 自动检测 | 指定后传给引擎，可提高准确度 |
+| 默认翻译服务 | 8 个引擎 | Google | 整页、划词、字幕共用 |
+| 显示模式 | 双语对照 / 仅显示译文 | 双语对照 | 快捷键 `Alt+S` 切换 |
+| 网页悬浮球 | 开 / 关 | 开 | 页面右侧的翻译按钮，可上下拖动 |
+
+### AI 翻译设置
+
+| 设置项 | 默认 | 说明 |
+| --- | --- | --- |
+| 系统提示词 | 专业译者提示词 | `{{to}}` 替换为目标语言英文名，`{{from}}` 替换为源语言 |
+| Temperature | 0.3 | 越低译文越稳定，建议 0–0.5 |
+
+提示词可以加入领域要求，例如：
+
+```
+You are a professional translator specializing in software engineering.
+Translate the text into {{to}}. Keep technical terms such as API, token,
+commit in English. Output only the translation.
+```
+
+整页翻译时，扩展会把多个段落打包成 JSON 数组一次发送（每批最多 16 段 / 2400 字符），要求模型按原顺序返回。模型返回格式不对时自动降级为逐段翻译，因此自定义提示词里**不要**要求模型输出额外说明。
+
+### 译文样式
+
+| 样式 | 效果 |
+| --- | --- |
+| 默认 | 与原文样式一致 |
+| 下划线 / 虚线 | 译文带强调色下划线 |
+| 高亮 | 译文带浅色背景 |
+| 引用条 | 译文左侧竖线 |
+| 弱化 | 降低透明度，突出原文 |
+| 彩色 | 译文使用强调色 |
+| 学习模式 | 译文模糊，鼠标悬停才显示，适合先读原文再核对 |
+
+强调色可自定义，影响下划线、高亮、引用条和彩色样式。“仅显示译文”模式下样式自动失效。
+
+### 划词与悬停
+
+| 设置项 | 可选值 | 默认 |
+| --- | --- | --- |
+| 划词翻译 | 开 / 关 | 开 |
+| 划词触发方式 | 显示图标点击翻译 / 选中直接弹出 | 显示图标 |
+| 悬停翻译段落 | 开 / 关 | 开 |
+| 悬停触发键 | Alt / Ctrl / Shift | Alt |
+| 输入框翻译 | 开 / 关 | 关 |
+| 输入框目标语言 | 19 种语言 | English |
+
+### 视频字幕
+
+| 设置项 | 默认 | 说明 |
+| --- | --- | --- |
+| YouTube 双语字幕 | 开 | 在播放器中打开 CC 后生效；“仅显示译文”模式下只显示译文行 |
+
+### 网站规则
+
+每行一个域名，自动匹配子域名（填 `medium.com` 也会匹配 `blog.medium.com`）。粘贴完整网址也可以，保存时会自动去掉协议和路径。
+
+- **总是翻译**：打开页面后自动开始整页翻译
+- **永不翻译**：优先级高于“总是翻译”
+
+弹窗中的“总是翻译此网站”开关等价于在这里增删当前域名。
+
+---
+
+## 三、导入与导出
+
+设置页 → 高级 → “导出设置”会下载 `glimmer-settings.json`，“导入设置”可恢复。仓库中的 [`settings.example.json`](./settings.example.json) 是一份完整示例，填好 Key 后直接导入即可批量配置。
+
+导入时缺失的字段会自动使用默认值，所以文件里只写需要修改的部分也可以：
+
+```json
+{
+  "engine": "deepseek",
+  "targetLang": "zh-CN",
+  "engines": {
+    "deepseek": { "apiKey": "sk-xxxx" }
+  }
+}
+```
+
+> 导出的文件包含明文 API Key，请勿分享或提交到代码仓库。
+
+---
+
+## 四、快捷键
+
+| 默认快捷键 | 作用 |
+| --- | --- |
+| `Alt+A` | 翻译 / 还原当前页面 |
+| `Alt+S` | 切换双语 / 仅译文 |
+| `Alt+Q` | 打开扩展弹窗 |
+
+在 `chrome://extensions/shortcuts` 中可修改。若快捷键无效，通常是与其他扩展或系统快捷键冲突，在该页面重新设置即可。
