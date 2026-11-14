@@ -1,0 +1,114 @@
+/* 注入到网页中的译文样式（作用于 <gl-trans>） */
+gl-trans {
+  font: inherit;
+  color: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  word-break: break-word;
+}
+gl-trans.gl-block {
+  display: block !important;
+  margin: 0.3em 0 0.1em !important;
+}
+gl-trans.gl-inline {
+  display: inline !important;
+  margin-left: 0.45em !important;
+}
+gl-trans.gl-loading .gl-t::after {
+  content: '';
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.1em;
+  border-radius: 50%;
+  border: 2px solid var(--gl-color, #8b5cf6);
+  border-right-color: transparent;
+  animation: gl-spin 0.7s linear infinite;
+  opacity: 0.8;
+}
+@keyframes gl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+gl-trans.gl-error {
+  cursor: pointer;
+  color: #ef4444 !important;
+  font-size: 0.85em;
+}
+
+/* ----- 译文样式 ----- */
+html[data-gl-style='underline'] gl-trans .gl-t {
+  text-decoration: underline 2px var(--gl-color) !important;
+  text-underline-offset: 4px;
+}
+html[data-gl-style='dashed'] gl-trans .gl-t {
+  text-decoration: underline dashed 1.5px var(--gl-color) !important;
+  text-underline-offset: 4px;
+}
+html[data-gl-style='highlight'] gl-trans .gl-t {
+  background: color-mix(in srgb, var(--gl-color) 18%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+html[data-gl-style='border'] gl-trans.gl-block {
+  border-left: 3px solid var(--gl-color) !important;
+  padding-left: 0.6em !important;
+}
+html[data-gl-style='weak'] gl-trans {
+  opacity: 0.6;
+}
+html[data-gl-style='italic'] gl-trans {
+  font-style: italic;
+}
+html[data-gl-style='color'] gl-trans {
+  color: var(--gl-color) !important;
+}
+/* 学习模式：译文模糊，鼠标悬停显示 */
+html[data-gl-style='blur'] gl-trans:not(.gl-loading) .gl-t {
+  filter: blur(5px);
+  transition: filter 0.2s;
+  cursor: pointer;
+}
+html[data-gl-style='blur'] gl-trans:hover .gl-t {
+  filter: none;
+}
+
+/* ----- 仅显示译文模式 ----- */
+html[data-gl-mode='translation'] .gl-host {
+  font-size: 0 !important;
+  margin-top: var(--gl-mt) !important;
+  margin-bottom: var(--gl-mb) !important;
+  padding-top: var(--gl-pt) !important;
+  padding-bottom: var(--gl-pb) !important;
+}
+html[data-gl-mode='translation'] .gl-host::marker {
+  font-size: var(--gl-fs);
+}
+html[data-gl-mode='translation'] .gl-src {
+  display: none !important;
+}
+html[data-gl-mode='translation'] .gl-src + gl-trans.gl-inline {
+  margin: 0 0.8em 0 0 !important;
+}
+html[data-gl-mode='translation'] .gl-host > :not(gl-trans) {
+  display: none !important;
+}
+html[data-gl-mode='translation'] .gl-host > gl-trans {
+  display: inline !important;
+  font-size: var(--gl-fs, 16px) !important;
+  margin: 0 !important;
+  margin-left: 0 !important;
+  border: 0 !important;
+  padding: 0 !important;
+  opacity: 1 !important;
+  font-style: inherit !important;
+}
+html[data-gl-mode='translation'] .gl-host > gl-trans .gl-t {
+  text-decoration: none !important;
+  background: none !important;
+  filter: none !important;
+}

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>微光翻译 · 设置</title>
+    <link rel="stylesheet" href="../styles/theme.css" />
+    <link rel="stylesheet" href="options.css" />
+    <link rel="stylesheet" href="../src/content/content.css" />
+  </head>
+  <body>
+    <aside class="side">
+      <div class="brand"><img src="../icons/icon48.png" alt="" /><span>微光翻译</span></div>
+      <nav id="nav">
+        <a href="#general" data-sec="general">基本设置</a>
+        <a href="#engines" data-sec="engines">翻译服务</a>
+        <a href="#ai" data-sec="ai">AI 翻译设置</a>
+        <a href="#style" data-sec="style">译文样式</a>
+        <a href="#interact" data-sec="interact">划词与悬停</a>
+        <a href="#video" data-sec="video">视频字幕</a>
+        <a href="#sites" data-sec="sites">网站规则</a>
+        <a href="#advanced" data-sec="advanced">高级</a>
+      </nav>
+      <div class="side-foot" id="ver"></div>
+    </aside>
+
+    <main>
+      <!-- 基本设置 -->
+      <section id="general" class="sec">
+        <h1>基本设置</h1>
+        <p class="sub">选择你的母语和偏好的翻译方式，网页会以双语对照的形式呈现。</p>
+        <div class="card form">
+          <div class="field"><label>目标语言</label><select data-path="targetLang" id="targetLang"></select></div>
+          <div class="field"><label>源语言</label><select data-path="sourceLang" id="sourceLang"></select></div>
+          <div class="field"><label>默认翻译服务</label><select data-path="engine" id="engineSel"></select></div>
+          <div class="field">
+            <label>显示模式</label>
+            <select data-path="displayMode">
+              <option value="bilingual">双语对照</option>
+              <option value="translation">仅显示译文</option>
+            </select>
+          </div>
+          <div class="field"><label>网页悬浮球</label><input type="checkbox" class="sw" data-path="floatBall" /></div>
+        </div>
+      </section>
+
+      <!-- 翻译服务 -->
+      <section id="engines" class="sec">
+        <h1>翻译服务</h1>
+        <p class="sub">Google 翻译开箱即用；Microsoft、DeepL 与大模型需填写你自己的 API Key，Key 只保存在本地浏览器中。</p>
+        <div id="engineCards" class="engine-grid"></div>
+      </section>
+
+      <!-- AI 设置 -->
+      <section id="ai" class="sec">
+        <h1>AI 翻译设置</h1>
+        <p class="sub">作用于 GPT、Gemini、DeepSeek、Claude 和自定义模型。<code>{{to}}</code> 会被替换为目标语言。</p>
+        <div class="card form">
+          <div class="field col">
+            <label>系统提示词（Prompt）</label>
+            <textarea data-path="llm.prompt" rows="5"></textarea>
+            <button class="ghost small" id="resetPrompt">恢复默认</button>
+          </div>
+          <div class="field">
+            <label>Temperature <span class="hint">越低越稳定</span></label>
+            <input type="number" min="0" max="2" step="0.1" data-path="llm.temperature" data-type="number" style="width: 100px" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 译文样式 -->
+      <section id="style" class="sec">
+        <h1>译文样式</h1>
+        <p class="sub">为双语模式下的译文选择一种样式。“学习模式”会模糊译文，鼠标悬停才显示，适合练习阅读。</p>
+        <div class="style-grid" id="styleGrid"></div>
+        <div class="card form">
+          <div class="field"><label>强调色</label><input type="color" data-path="transColor" /></div>
+        </div>
+        <div class="card preview" id="preview">
+          <p class="pv-orig">The best way to learn a language is to immerse yourself in it every day.</p>
+          <gl-trans class="gl-block"><span class="gl-t">学习一门语言最好的方法，是每天沉浸其中。</span></gl-trans>
+        </div>
+      </section>
+
+      <!-- 划词与悬停 -->
+      <section id="interact" class="sec">
+        <h1>划词与悬停</h1>
+        <p class="sub">选中文字即可翻译；按住修饰键并把鼠标悬停在段落上，可单独翻译这一段。</p>
+        <div class="card form">
+          <div class="field"><label>划词翻译</label><input type="checkbox" class="sw" data-path="selection.enabled" /></div>
+          <div class="field">
+            <label>划词触发方式</label>
+            <select data-path="selection.trigger">
+              <option value="icon">显示翻译图标，点击后翻译</option>
+              <option value="auto">选中后直接弹出翻译</option>
+            </select>
+          </div>
+          <div class="field"><label>悬停翻译段落</label><input type="checkbox" class="sw" data-path="hover.enabled" /></div>
+          <div class="field">
+            <label>悬停触发键</label>
+            <select data-path="hover.key">
+              <option value="Alt">Alt / Option</option>
+              <option value="Control">Ctrl</option>
+              <option value="Shift">Shift</option>
+            </select>
+          </div>
+        </div>
+        <div class="card form">
+          <div class="field">
+            <label>输入框翻译 <span class="hint">在输入框末尾连按三次空格，把内容翻译成目标语言</span></label>
+            <input type="checkbox" class="sw" data-path="inputTranslate.enabled" />
+          </div>
+          <div class="field"><label>输入框目标语言</label><select data-path="inputTranslate.targetLang" id="inputLang"></select></div>
+        </div>
+      </section>
+
+      <!-- 视频字幕 -->
+      <section id="video" class="sec">
+        <h1>视频字幕</h1>
+        <p class="sub">在 YouTube 打开字幕（CC）后，自动显示双语字幕。鼠标移到字幕上会暂停视频，点击单词可查看释义。</p>
+        <div class="card form">
+          <div class="field"><label>YouTube 双语字幕</label><input type="checkbox" class="sw" data-path="youtube.enabled" /></div>
+        </div>
+      </section>
+
+      <!-- 网站规则 -->
+      <section id="sites" class="sec">
+        <h1>网站规则</h1>
+        <p class="sub">每行一个域名，子域名会自动匹配，例如 <code>medium.com</code>。</p>
+        <div class="two">
+          <div class="card form">
+            <div class="field col"><label>总是翻译的网站</label><textarea data-path="alwaysSites" data-type="lines" rows="8" placeholder="news.ycombinator.com"></textarea></div>
+          </div>
+          <div class="card form">
+            <div class="field col"><label>永不自动翻译的网站</label><textarea data-path="neverSites" data-type="lines" rows="8" placeholder="mail.google.com"></textarea></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 高级 -->
+      <section id="advanced" class="sec">
+        <h1>高级</h1>
+        <div class="card form">
+          <div class="field"><label>翻译缓存 <span class="hint">相同文本不会重复请求，节省额度</span></label><button class="ghost" id="clearCache">清除缓存</button></div>
+          <div class="field"><label>快捷键</label><button class="ghost" id="shortcuts">自定义快捷键</button></div>
+          <div class="field">
+            <label>备份</label>
+            <div class="btns">
+              <button class="ghost" id="exportBtn">导出设置</button>
+              <button class="ghost" id="importBtn">导入设置</button>
+              <input type="file" id="importFile" accept="application/json" hidden />
+            </div>
+          </div>
+          <div class="field"><label>恢复默认设置</label><button class="ghost danger" id="resetAll">重置</button></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
