@@ -4,4 +4,6 @@
 *.pem
 node_modules/
 tests/output/
+tests/.env.local
+.env*.local
 __pycache__/

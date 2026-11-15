@@ -1,3 +1,18 @@
+// 带超时的 fetch：服务商无响应时及时报错，让页面显示“点击重试”而不是一直转圈
+export async function fetchT(url, opts = {}, ms = 20000) {
+  try {
+    return await fetch(url, { ...opts, signal: AbortSignal.timeout(ms) });
+  } catch (e) {
+    if (e?.name === 'TimeoutError') {
+      const err = new Error(`请求超时（${ms / 1000} 秒无响应），请检查网络或稍后重试`);
+      err.timeout = true;
+      throw err;
+    }
+    if (e instanceof TypeError) throw new Error('网络错误：无法连接到翻译服务（' + new URL(url).host + '）');
+    throw e;
+  }
+}
+
 export async function httpError(res, engine) {
   let detail = '';
   try {

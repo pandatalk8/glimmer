@@ -86,6 +86,9 @@ async def main():
         check('Google 翻译返回中文', r.get('ok') and '你好' in r['data'][0], str(r))
         r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['Hi']})""")
         check('未配置 Key 时给出中文提示', not r.get('ok') and 'API Key' in r.get('error', ''), r.get('error'))
+        await sw.evaluate(SET, {'engines': {'custom': {'baseUrl': 'http://127.0.0.1:9/v1', 'model': 'x', 'apiKey': ''}}})
+        r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'custom',texts:['Hi'],noCache:true})""")
+        check('服务不可达时给出网络错误', not r.get('ok') and '网络错误' in r.get('error', ''), r.get('error'))
 
         # 2. 整页翻译
         print('\n[2] 整页双语翻译')

@@ -1,13 +1,13 @@
 // 传统机器翻译引擎：Google / Microsoft / DeepL
 import { deeplSource, deeplTarget, msCode } from '../../shared/languages.js';
-import { httpError, mapLimit } from './util.js';
+import { fetchT, httpError, mapLimit } from './util.js';
 
 // ---------- Google（免费 gtx 接口） ----------
 async function googleOne(text, from, to) {
   const url =
     'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t' +
     `&sl=${encodeURIComponent(from || 'auto')}&tl=${encodeURIComponent(to)}`;
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
     body: 'q=' + encodeURIComponent(text),
@@ -17,8 +17,53 @@ async function googleOne(text, from, to) {
   return (data?.[0] || []).map((s) => s?.[0] || '').join('');
 }
 
+// 批量接口：一个请求携带多个 q，比逐段请求快一个数量级
+async function googleBatch(texts, from, to) {
+  const url =
+    'https://translate.googleapis.com/translate_a/t?client=gtx&dj=1' +
+    `&sl=${encodeURIComponent(from || 'auto')}&tl=${encodeURIComponent(to)}`;
+  const res = await fetchT(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: texts.map((t) => 'q=' + encodeURIComponent(t)).join('&'),
+  });
+  if (!res.ok) throw await httpError(res, 'Google');
+  const data = await res.json();
+  // sl=auto 时每项为 [译文, 检测语言]，指定源语言时每项为译文字符串
+  const out = Array.isArray(data) ? data.map((x) => (Array.isArray(x) ? x[0] : x)) : [];
+  if (out.length !== texts.length || out.some((x) => typeof x !== 'string')) {
+    throw new Error('Google 批量结果数量不匹配');
+  }
+  return out;
+}
+
+function chunkBy(texts, maxChars, maxItems) {
+  const chunks = [];
+  let cur = [];
+  let size = 0;
+  for (const t of texts) {
+    if (cur.length && (size + t.length > maxChars || cur.length >= maxItems)) {
+      chunks.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(t);
+    size += t.length;
+  }
+  if (cur.length) chunks.push(cur);
+  return chunks;
+}
+
 export async function google(texts, { from, to }) {
-  return mapLimit(texts, 6, (t) => googleOne(t, from, to));
+  const out = await mapLimit(chunkBy(texts, 4500, 64), 3, async (chunk) => {
+    try {
+      return await googleBatch(chunk, from, to);
+    } catch (e) {
+      if (e.status === 429) throw e; // 限流时逐段重试只会更糟
+      return mapLimit(chunk, 4, (t) => googleOne(t, from, to)); // 降级为单段接口
+    }
+  });
+  return out.flat();
 }
 
 // ---------- Microsoft（Azure Translator 官方 API，免费层每月 200 万字符） ----------
@@ -37,7 +82,7 @@ export async function microsoft(texts, { from, to, cfg }) {
       'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0' +
       (src ? `&from=${src}` : '') +
       `&to=${msCode(to)}`;
-    const res = await fetch(url, {
+    const res = await fetchT(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(chunk.map((t) => ({ Text: t }))),
@@ -61,7 +106,7 @@ export async function deepl(texts, { from, to, cfg }) {
     const body = { text: chunk, target_lang: deeplTarget(to) };
     const src = deeplSource(from);
     if (src) body.source_lang = src;
-    const res = await fetch(base.replace(/\/$/, '') + '/v2/translate', {
+    const res = await fetchT(base.replace(/\/$/, '') + '/v2/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

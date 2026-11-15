@@ -1,7 +1,7 @@
 // 大模型翻译：OpenAI / DeepSeek / 自定义(OpenAI 兼容) / Gemini / Claude
 import { getLang } from '../../shared/languages.js';
 import { DEFAULT_PROMPT } from '../../shared/settings.js';
-import { httpError, mapLimit } from './util.js';
+import { fetchT, httpError, mapLimit } from './util.js';
 
 // ---------- 各家 chat 调用：(system, user) -> string ----------
 async function openaiChat(cfg, system, user, temperature, defaultBase) {
@@ -17,13 +17,13 @@ async function openaiChat(cfg, system, user, temperature, defaultBase) {
     ],
     temperature,
   };
-  let res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  let res = await fetchT(url, { method: 'POST', headers, body: JSON.stringify(body) }, 90000);
   // 部分推理模型不支持自定义 temperature，去掉后重试一次
   if (res.status === 400) {
     const err = await httpError(res, 'LLM');
     if (!/temperature/i.test(err.detail)) throw err;
     delete body.temperature;
-    res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    res = await fetchT(url, { method: 'POST', headers, body: JSON.stringify(body) }, 90000);
   }
   if (!res.ok) throw await httpError(res, cfg._name || 'LLM');
   const data = await res.json();
@@ -35,7 +35,7 @@ async function geminiChat(cfg, system, user, temperature) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     cfg.model
   )}:generateContent`;
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey.trim() },
     body: JSON.stringify({
@@ -43,7 +43,7 @@ async function geminiChat(cfg, system, user, temperature) {
       contents: [{ role: 'user', parts: [{ text: user }] }],
       generationConfig: { temperature },
     }),
-  });
+  }, 90000);
   if (!res.ok) throw await httpError(res, 'Gemini');
   const data = await res.json();
   const parts = data?.candidates?.[0]?.content?.parts || [];
@@ -55,7 +55,7 @@ async function geminiChat(cfg, system, user, temperature) {
 
 async function claudeChat(cfg, system, user, temperature) {
   if (!cfg.apiKey) throw new Error('请先在设置中填写 Claude API Key');
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchT('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -70,7 +70,7 @@ async function claudeChat(cfg, system, user, temperature) {
       temperature,
       messages: [{ role: 'user', content: user }],
     }),
-  });
+  }, 90000);
   if (!res.ok) throw await httpError(res, 'Claude');
   const data = await res.json();
   return (data.content || [])
@@ -165,7 +165,7 @@ export async function llmTranslate(engineId, texts, { from, to, cfg, settings })
     try {
       parsed = parseBatch(await chat(cfg, system, user, temperature), segs.length);
     } catch (e) {
-      if (e.status && e.status !== 400) throw e;
+      if (e.timeout || (e.status && e.status !== 400)) throw e;
     }
     if (!parsed) parsed = await mapLimit(segs, 3, single); // 批量解析失败则逐条翻译
     idxs.forEach((i, k) => (out[i] = parsed[k]));

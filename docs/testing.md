@@ -20,7 +20,7 @@ python3 tests/e2e.py            # 无头模式
 python3 tests/e2e.py --headed   # 弹出浏览器窗口，可以看到每一步
 ```
 
-**第三步，看结果。** 全部通过时输出 `结果：13/13 通过`，退出码为 0。截图保存在 `tests/output/`，可以打开检查双语排版、仅译文模式和划词面板。
+**第三步，看结果。** 全部通过时输出 `结果：14/14 通过`，退出码为 0。截图保存在 `tests/output/`，可以打开检查双语排版、仅译文模式和划词面板。
 
 覆盖范围：
 
@@ -34,6 +34,30 @@ python3 tests/e2e.py --headed   # 弹出浏览器窗口，可以看到每一步
 | 大模型批量 | 用本地 mock 接口验证 11 段只发 1 次请求 |
 
 测试需要能访问 Google 翻译。网络受限导致第 1、2 组失败时，先确认浏览器能打开 `translate.googleapis.com`。
+
+### 更多测试脚本
+
+| 脚本 | 用途 | 需要什么 | 用时 |
+| --- | --- | --- | --- |
+| `tests/e2e.py` | 核心逻辑回归（本地测试页 + mock 大模型） | 网络 | 约 1 分钟 |
+| `tests/e2e_real.py` | 真实网站与交互：维基百科、Hacker News、MDN、悬停、输入框、弹窗、网站规则、导入、样式、右键菜单（28 项） | 网络 | 约 2 分钟 |
+| `tests/e2e_engines.py` | 用你的 API Key 测试各引擎：测试连接、批量 8 段顺序、中译英、整页翻译 | `tests/.env.local` 中的 Key | 每个引擎约 10–30 秒 |
+| `tests/e2e_youtube.py` | YouTube 真实字幕（会弹出浏览器窗口） | 网络 | 约 40 秒 |
+
+`e2e_real.py` 支持 `--only wiki,hn` 只跑部分场景，`--headed` 显示浏览器窗口。
+
+**测试引擎的步骤：**
+
+```bash
+cp tests/env.example tests/.env.local   # 该文件已被 git 忽略
+# 编辑 tests/.env.local，只填你有的 Key
+python3 tests/e2e_engines.py            # 未填 Key 的引擎自动跳过
+python3 tests/e2e_engines.py --only deepl,claude
+```
+
+脚本不会打印 Key，结束时输出一张汇总表。
+
+> **关于 YouTube：** 自动化浏览器会被 YouTube 识别，字幕接口返回空内容（连 YouTube 自己的原生字幕也不显示），因此 `e2e_youtube.py` 在部分网络环境下必然失败。这不代表扩展有问题，以你日常使用的 Chrome 手动验证为准（见下方清单第 9 项）。
 
 ---
 
