@@ -1,4 +1,6 @@
 .DS_Store
+# Claude Code 本地数据（worktree 副本等），不纳入版本库
+.claude/
 *.zip
 *.crx
 *.pem
