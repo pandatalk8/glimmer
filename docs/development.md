@@ -246,7 +246,7 @@ zip -r glimmer-v0.2.0.zip manifest.json src panel options styles icons -x '*.DS_
 
 上传到 [Chrome 应用商店开发者后台](https://chrome.google.com/webstore/devconsole)。发布前：
 
-1. 修改 `manifest.json` 的 `version`
+1. 修改 `manifest.json` 的 `version`，并在 [`CHANGELOG.md`](../CHANGELOG.md) 中把“未发布”改为该版本号和日期（日常每次修改都要先记录到“未发布”，规则见更新日志开头）
 2. 准备 `icons/icon512.png` 作为商店图标素材，以及 1280×800 的截图
 3. 隐私说明中需声明：扩展会把网页文本发送给用户选择的翻译服务；API Key 仅存储在本地
 4. `<all_urls>` 权限审核较严，需在说明中解释“需要在任意网页上翻译内容”
