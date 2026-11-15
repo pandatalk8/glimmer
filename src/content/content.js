@@ -350,6 +350,7 @@
     state.mo = new MutationObserver(onMutation);
     state.mo.observe(document.body, { childList: true, subtree: true });
     updateBall();
+    notifyState();
   }
 
   function clearTranslations() {
@@ -372,6 +373,7 @@
     state.mo?.disconnect();
     clearTranslations();
     updateBall();
+    notifyState();
   }
 
   function togglePage() {
@@ -433,6 +435,45 @@
   }
   G.toast = toast;
 
+  // ---------- 侧边面板（iframe 加载扩展页 panel.html） ----------
+  let drawer = null;
+  function openDrawer(view = 'home') {
+    const root = ensureUI();
+    if (drawer) return;
+    drawer = h('div', { class: 'drawer' });
+    const f = document.createElement('iframe');
+    f.src = chrome.runtime.getURL('panel/panel.html') + '?mode=drawer&view=' + encodeURIComponent(view);
+    f.setAttribute('allow', 'clipboard-write');
+    drawer.appendChild(f);
+    root.appendChild(drawer);
+    requestAnimationFrame(() => requestAnimationFrame(() => drawer?.classList.add('open')));
+    ball?.classList.add('with-drawer'); // 悬浮球移到面板左侧，避免被遮挡
+  }
+  function closeDrawer() {
+    const d = drawer;
+    drawer = null;
+    if (!d) return;
+    ball?.classList.remove('with-drawer');
+    d.classList.remove('open');
+    setTimeout(() => d.remove(), 220);
+  }
+  function toggleDrawer(view) {
+    drawer ? closeDrawer() : openDrawer(view);
+  }
+  G.toggleDrawer = toggleDrawer;
+  // 面板 iframe 通过 postMessage 请求关闭；校验来源必须是本扩展
+  window.addEventListener('message', (e) => {
+    if (e.data?.source !== 'glimmer-panel' || e.origin !== 'chrome-extension://' + chrome.runtime.id) return;
+    if (e.data.type === 'close') closeDrawer();
+  });
+
+  // 通知已打开的面板（弹窗或抽屉）页面翻译状态变化
+  function notifyState() {
+    try {
+      chrome.runtime.sendMessage({ type: 'pageStateChanged', active: state.active }, () => void chrome.runtime.lastError);
+    } catch {}
+  }
+
   // ---------- 悬浮球 ----------
   let ball = null;
   function buildBall() {
@@ -441,7 +482,7 @@
     ball.innerHTML = `
       <div class="ball-menu">
         <button data-act="mode" title="切换双语 / 仅译文"><span class="ic">⇄</span><span class="lbl"></span></button>
-        <button data-act="options" title="设置"><span class="ic">⚙</span><span class="lbl">设置</span></button>
+        <button data-act="panel" title="打开面板"><span class="ic">☰</span><span class="lbl">面板</span></button>
         <button data-act="hide" title="本页隐藏悬浮球"><span class="ic">✕</span><span class="lbl">隐藏</span></button>
       </div>
       <div class="ball" title="翻译此页面 (Alt+A)">${LOGO}<span class="dot"></span></div>`;
@@ -471,7 +512,7 @@
       const act = e.target.closest('button')?.dataset.act;
       if (act === 'mode')
         await send('saveSettings', { patch: { displayMode: S.displayMode === 'bilingual' ? 'translation' : 'bilingual' } });
-      if (act === 'options') send('openOptions');
+      if (act === 'panel') toggleDrawer();
       if (act === 'hide') ball.remove(), (ball = null);
     });
     updateBall();
@@ -533,6 +574,7 @@
       <div class="p-lang"></div>
       <div class="p-out"><span class="spinner"></span></div>
       <div class="p-foot">
+        ${text.length <= 300 ? '<button data-act="save" class="p-save" title="收藏到生词本">☆ 收藏</button>' : ''}
         <button data-act="speak-src" title="朗读原文">🔊 原文</button>
         <button data-act="speak" title="朗读译文">🔊 译文</button>
         <button data-act="copy" title="复制译文">复制</button>
@@ -562,6 +604,14 @@
     };
     run();
 
+    const saveBtn = panel.querySelector('.p-save');
+    const markSaved = (on) => {
+      if (!saveBtn) return;
+      saveBtn.classList.toggle('on', on);
+      saveBtn.textContent = on ? '★ 已收藏' : '☆ 收藏';
+    };
+    if (saveBtn) send('hasWord', { word: text }).then(markSaved).catch(() => {});
+
     panel.querySelector('.p-engine').addEventListener('change', (e) => {
       engine = e.target.value;
       run();
@@ -569,6 +619,14 @@
     panel.querySelector('.p-x').onclick = closePanel;
     panel.querySelector('.p-foot').addEventListener('click', (e) => {
       const act = e.target.closest('button')?.dataset.act;
+      if (act === 'save') {
+        send('toggleWord', { word: text, trans: result, url: location.href })
+          .then((r) => {
+            markSaved(r.saved);
+            toast(r.saved ? `已收藏到生词本（共 ${r.count} 个）` : '已从生词本移除');
+          })
+          .catch((err) => toast(err.message, 'error'));
+      }
       if (act === 'copy') navigator.clipboard.writeText(result).then(() => toast('已复制'));
       if (act === 'retry') run();
       if (act === 'speak') speak(result, to);
@@ -636,7 +694,8 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       hideSelUI();
-      closePanel();
+      if (panel) closePanel();
+      else closeDrawer();
     }
   });
 
@@ -695,6 +754,7 @@
     if (msg.type === 'togglePage') togglePage();
     if (msg.type === 'setPage') msg.on ? startPage() : stopPage();
     if (msg.type === 'translateSelection') openPanel(msg.text, innerWidth / 2, innerHeight / 3);
+    if (msg.type === 'toggleDrawer') toggleDrawer(msg.view);
     if (msg.type === 'getState') reply({ active: state.active, units: units.length, host });
   });
 

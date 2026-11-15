@@ -50,8 +50,8 @@
 ┌──────────────────────────── 扩展进程 ────────────────┼───────────────────┐
 │                                                      ▼                   │
 │  ┌────────────┐  ┌────────────┐     ┌──────────────────────────────────┐ │
-│  │ popup/     │  │ options/   │ ──▶ │ background/index.js (Service Worker)│ │
-│  │ 弹窗       │  │ 设置页     │     │  消息路由 → 去重 → 缓存 → 引擎适配器 │ │
+│  │ panel/     │  │ options/   │ ──▶ │ background/index.js (Service Worker)│ │
+│  │ 面板       │  │ 设置页     │     │  消息路由 → 去重 → 缓存 → 引擎适配器 │ │
 │  └─────┬──────┘  └─────┬──────┘     └───────┬──────────────┬───────────┘ │
 │        │               │                    │              │             │
 │        └──── chrome.storage.local ◀─────────┘     IndexedDB 缓存         │
@@ -68,7 +68,7 @@
 | 页面层 | `src/content/*` | 理解 DOM、调度、渲染、交互 | 不发网络请求，不碰 API Key |
 | 服务层 | `src/background/index.js`、`cache.js` | 路由、去重、缓存 | 不关心 DOM，不关心具体引擎协议 |
 | 适配层 | `src/background/engines/*` | 把 `string[]` 翻译成 `string[]` | 不关心缓存和调用方 |
-| 配置层 | `src/shared/*`、`popup/`、`options/` | 设置的定义、读写和界面 | 不参与翻译流程 |
+| 配置层 | `src/shared/*`、`panel/`、`options/` | 设置的定义、读写和界面 | 不参与翻译流程 |
 
 ---
 
@@ -240,6 +240,29 @@ yt-hook.js (MAIN, document_start)          youtube.js (isolated)
 
 渲染采用 `requestAnimationFrame` 而非 `timeupdate` 事件，因为后者每秒只触发约 4 次，字幕切换会有明显延迟。每帧用二分查找定位当前字幕，索引未变时直接返回，不触碰 DOM。
 
+### 3.8 面板：一个页面，两种形态
+
+侧边面板需要出现在两个地方：点击工具栏图标时的弹窗，以及网页内从右侧滑出的抽屉。两处内容完全一样——首页、设置、生词本、右侧图标栏。
+
+| 方案 | 做法 | 问题 |
+| --- | --- | --- |
+| 两套实现 | 弹窗写一套，内容脚本在 Shadow DOM 里再写一套 | 代码重复；内容脚本不能 `import` 共享模块，设置逻辑要再抄一遍 |
+| **一个扩展页面（采用）** | `panel/panel.html` 既作弹窗，又以 iframe 嵌入网页 | 需要把面板资源声明为 `web_accessible_resources` |
+
+```
+工具栏图标 ──▶ panel.html            （弹窗，chrome.tabs.query 找当前标签页）
+悬浮球“面板” ─▶ <glimmer-ui> Shadow DOM
+                 └ .drawer
+                    └ <iframe src="panel.html?mode=drawer">
+                         │ runtime.sendMessage(tabInfo) → sender.tab
+                         │ tabs.sendMessage(tab, setPage / getState)
+                         └ parent.postMessage(close) ──▶ 内容脚本校验 origin 后收起
+```
+
+iframe 中的面板是扩展源（`chrome-extension://`）页面，可以直接使用全部扩展 API 和共享模块，与网页 JavaScript 完全隔离；网页无法读取 iframe 内容。抽屉打开时，悬浮球随之左移到抽屉边缘，避免被遮挡。
+
+**状态同步** 不靠互相调用，而是靠两条广播：设置与生词写入 `chrome.storage.local`，所有面板监听 `onChanged` 刷新；整页翻译开关由内容脚本广播 `pageStateChanged`。因此无论从悬浮球、快捷键、弹窗还是抽屉操作，各处显示始终一致。
+
 ---
 
 ## 四、数据流
@@ -266,7 +289,7 @@ yt-hook.js (MAIN, document_start)          youtube.js (isolated)
 `chrome.storage.local` 是设置的**唯一事实来源**。任何界面都不互相通知，只写存储：
 
 ```
-popup / options / 悬浮球菜单
+面板 / options / 悬浮球菜单 / 划词面板
         │ saveSettings(patch)：读取 → 深合并 → 写回
         ▼
 chrome.storage.local ──onChanged──▶ 所有标签页的 content.js
@@ -294,6 +317,8 @@ settings
 
 读取时与 `DEFAULT_SETTINGS` 深合并：对象递归合并，数组整体替换。新版本增加设置项时只需在默认值里添加，老用户无需迁移脚本。
 
+**生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳 }`，按小写去重，上限 5000 条。
+
 **缓存**（IndexedDB `glimmer-cache` / 对象仓库 `tr`）：键为缓存键字符串，值为 `{ v: 译文, t: 写入时间 }`。
 
 ---
@@ -313,6 +338,7 @@ settings
 | 缓存存储 | IndexedDB | 内存 / `storage.local` | SW 会被终止；大量小记录需要随机读写 |
 | 设置同步 | `storage.local` | `storage.sync` | `sync` 单项限 8KB，且 API Key 不应同步到云端 |
 | 大模型批量 | JSON 数组协议 + 降级 | 分隔符拼接 | 分隔符可能被模型改写或翻译；JSON 可校验数量 |
+| 面板实现 | 同一扩展页面兼作弹窗与 iframe 抽屉 | 内容脚本中再实现一套 UI | 一套代码；可直接用扩展 API 和共享模块；与网页隔离 |
 | Microsoft 引擎 | Azure 官方 API | Edge 免费鉴权接口 | 后者已下线（返回 404），且属非官方用法 |
 
 ---
@@ -337,6 +363,7 @@ settings
 - **不同步。** 使用 `storage.local` 而非 `storage.sync`，Key 不会上传到 Google 账户
 - **无自有服务器。** 网页文本只发往用户选择的服务商，扩展不收集任何数据
 - **主世界最小化。** `yt-hook.js` 只转发字幕数据，不读取设置、不调用扩展 API；内容脚本接收消息时校验 `event.source === window` 和 `source` 标识
+- **面板隔离。** 抽屉是扩展源的 iframe，网页读不到其中内容；面板发出的 `postMessage` 只有“关闭”一种，内容脚本校验来源必须是本扩展。代价是 `panel/*` 等资源对网页可见，网站可借此探测扩展是否安装
 - **输出转义。** 划词面板、字幕中的文本全部经过 HTML 转义或使用 `textContent` 写入，译文中的恶意内容不会被当作 HTML 执行
 - **用户可控。** “永不翻译”名单用于邮箱、内网等敏感站点；也可使用本地 Ollama，文本不出本机
 
@@ -351,7 +378,7 @@ settings
 | 新增语言 | `languages.js` 加一行 |
 | 新增译文样式 | `content.css` 加一组 `[data-gl-style]` 规则 → `options.js` 的 `STYLES` 加一项 |
 | 新增视频网站字幕 | 仿照 `yt-hook.js` + `youtube.js`，在 `manifest.json` 中注册对应站点 |
-| 新增设置项 | `DEFAULT_SETTINGS` 加默认值 → 设置页加带 `data-path` 的控件，自动双向绑定 |
+| 新增设置项 | `DEFAULT_SETTINGS` 加默认值 → 设置页加带 `data-path` 的控件，自动双向绑定；需要在面板中出现时，在 `panel.js` 的 `PICKERS` 加一项 |
 
 ---
 

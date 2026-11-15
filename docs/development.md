@@ -16,7 +16,7 @@
 | --- | --- |
 | `src/background/**`、`src/shared/**` | 扩展页点“重新加载” |
 | `src/content/**` | 重新加载扩展 **并刷新网页** |
-| `popup/**`、`options/**` | 关闭后重新打开弹窗或设置页 |
+| `panel/**`、`options/**` | 关闭后重新打开面板或设置页（网页内抽屉需重新加载扩展并刷新网页） |
 | `manifest.json` | 重新加载扩展 |
 
 > 重新加载扩展后，已打开网页里的旧内容脚本会失效，划词时会提示“扩展已更新，请刷新页面”，这是正常现象。
@@ -47,7 +47,7 @@
 
 ### 消息协议
 
-内容脚本、弹窗、设置页都通过 `chrome.runtime.sendMessage({ type, ...data })` 调用后台，返回 `{ ok: true, data }` 或 `{ ok: false, error }`。
+内容脚本、面板、设置页都通过 `chrome.runtime.sendMessage({ type, ...data })` 调用后台，返回 `{ ok: true, data }` 或 `{ ok: false, error }`。
 
 | type | 参数 | 返回 |
 | --- | --- | --- |
@@ -58,6 +58,9 @@
 | `testEngine` | `engine` | `{ text, ms }` |
 | `clearCache` | — | `true` |
 | `openOptions` | — | — |
+| `tabInfo` | — | 发送方所在标签页 `{ id, url }`；面板以抽屉形式运行时用它找到自己所在的网页 |
+| `toggleWord` | `word`、`trans`、`url` | `{ saved, count }`，已收藏则取消，未收藏则加入生词本 |
+| `hasWord` | `word` | `boolean` |
 
 后台发给内容脚本（`chrome.tabs.sendMessage`）：
 
@@ -67,6 +70,11 @@
 | `setPage` | `on: boolean`，开启或关闭整页翻译 |
 | `translateSelection` | `text`，弹出划词面板（右键菜单使用） |
 | `getState` | 返回 `{ active, units, host }`，仅顶层 frame 响应 |
+| `toggleDrawer` | `view`（可选），打开或收起网页内侧边面板 |
+
+内容脚本发给面板：整页翻译开关变化时广播 `{ type: 'pageStateChanged', active }`，面板据此同步“翻译此页面”开关。
+
+面板（抽屉）发给内容脚本：`parent.postMessage({ source: 'glimmer-panel', type: 'close' })` 请求收起抽屉，内容脚本会校验 `event.origin` 必须是本扩展。
 
 ### 设置的流转
 
@@ -108,6 +116,19 @@
 
 悬浮球、划词图标、翻译面板和 Toast 都挂在 `<glimmer-ui>` 的 Shadow DOM 中，样式来自 `src/content/ui.css`（已在 `web_accessible_resources` 中声明），与网页样式完全隔离。
 
+### 侧边面板
+
+`panel/panel.html` 同时是工具栏弹窗和网页内抽屉：
+
+| 形态 | 打开方式 | URL | 如何找到当前网页 |
+| --- | --- | --- | --- |
+| 弹窗 | 点击工具栏图标 | `panel.html` | `chrome.tabs.query({ active: true })` |
+| 抽屉 | 悬浮球菜单“面板” | `panel.html?mode=drawer&view=home` | 向后台发送 `tabInfo`，取 `sender.tab` |
+
+面板是单页应用：`VIEWS` 中定义首页、设置、生词本和选项页四类视图，右侧图标栏切换视图。设置页的每一行都由 `PICKERS` 中的一项驱动，每项提供 `get(settings)` 读取当前值、`options()` 列出选项、`set(value)` 返回要保存的设置片段。新增一个面板设置项只需在 `PICKERS` 加一项，再在 `VIEWS.settings` 中加一行。
+
+抽屉以 iframe 加载，因此 `panel/*`、`styles/*`、`src/shared/*`、`icons/*` 都声明在 `web_accessible_resources` 中。
+
 ---
 
 ## 四、新增一个翻译引擎
@@ -124,7 +145,7 @@
 foo: { apiKey: '' },
 ```
 
-`type` 决定设置页的标签，`free: true` 显示“免费”，`needKey: true` 时弹窗会提示“未配置”。
+`type` 决定设置页的标签，`free: true` 显示“免费”，`needKey: true` 时面板的引擎列表会标注“需 API Key”。
 
 **第二步，实现翻译函数。** 机器翻译放在 `src/background/engines/mt.js`：
 
@@ -174,7 +195,8 @@ foo: {
 | --- | --- |
 | 后台 / 引擎请求 | `chrome://extensions` → 本扩展 → “Service Worker” 链接，打开 DevTools 看 Network 和 Console |
 | 内容脚本 | 网页 DevTools → Console 顶部上下文下拉框选择“微光翻译”，即可访问 `window.__glimmer` |
-| 弹窗 | 右键扩展图标 → “审查弹出内容” |
+| 面板（弹窗） | 右键扩展图标 → “审查弹出内容” |
+| 面板（抽屉） | 网页 DevTools → Console 上下文下拉框选择 `panel.html` |
 | 设置页 | 设置页中直接按 F12 |
 | 缓存 | Service Worker DevTools → Application → IndexedDB → `glimmer-cache` |
 
@@ -219,7 +241,7 @@ await sw.evaluate("""async()=>{const [t]=await chrome.tabs.query({active:true});
 
 ```bash
 # 在项目根目录打包（排除文档和开发文件）
-zip -r glimmer-v0.1.0.zip manifest.json src popup options styles icons -x '*.DS_Store'
+zip -r glimmer-v0.2.0.zip manifest.json src panel options styles icons -x '*.DS_Store'
 ```
 
 上传到 [Chrome 应用商店开发者后台](https://chrome.google.com/webstore/devconsole)。发布前：

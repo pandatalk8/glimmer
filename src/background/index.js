@@ -37,8 +37,34 @@ async function translate({ texts, from, to, engine, noCache }) {
   return texts.map((t, i) => cached[i] ?? fresh.get(t) ?? '');
 }
 
+// ---------- 生词本：chrome.storage.local 的 words 数组，最新在前 ----------
+const MAX_WORDS = 5000;
+const wordKey = (w) => w.trim().toLowerCase();
+
+async function getWords() {
+  return (await chrome.storage.local.get('words')).words || [];
+}
+
+async function toggleWord({ word, trans, url }) {
+  const words = await getWords();
+  const key = wordKey(word);
+  const i = words.findIndex((w) => wordKey(w.w) === key);
+  if (i >= 0) {
+    words.splice(i, 1);
+    await chrome.storage.local.set({ words });
+    return { saved: false, count: words.length };
+  }
+  words.unshift({ w: word.trim(), t: trans || '', url: url || '', ts: Date.now() });
+  if (words.length > MAX_WORDS) words.length = MAX_WORDS;
+  await chrome.storage.local.set({ words });
+  return { saved: true, count: words.length };
+}
+
 const handlers = {
   translate,
+  tabInfo: (_msg, sender) => (sender.tab ? { id: sender.tab.id, url: sender.tab.url } : null),
+  toggleWord,
+  hasWord: async ({ word }) => (await getWords()).some((w) => wordKey(w.w) === wordKey(word)),
   getSettings: () => getSettings(),
   saveSettings: ({ patch }) => saveSettings(patch),
   meta: () => ({ engines: ENGINES, languages: LANGUAGES }),
@@ -57,11 +83,11 @@ const handlers = {
   },
 };
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const h = handlers[msg?.type];
   if (!h) return false;
   Promise.resolve()
-    .then(() => h(msg))
+    .then(() => h(msg, sender))
     .then((data) => sendResponse({ ok: true, data }))
     .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
   return true;

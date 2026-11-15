@@ -81,7 +81,7 @@ async def main():
         # 1. 引擎
         print('[1] 翻译引擎')
         ext = await ctx.new_page()
-        await ext.goto(f'chrome-extension://{eid}/popup/popup.html')
+        await ext.goto(f'chrome-extension://{eid}/panel/panel.html')
         r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'google',texts:['Hello world'],to:'zh-CN',noCache:true})""")
         check('Google 翻译返回中文', r.get('ok') and '你好' in r['data'][0], str(r))
         r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['Hi']})""")

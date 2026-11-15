@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover input popup always import style ctxmenu
+场景：wiki hn mdn hover input popup drawer always import style ctxmenu
 """
 import asyncio, functools, http.server, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -191,13 +191,15 @@ async def main():
             await sw.evaluate(SET, {'inputTranslate': {'enabled': False, 'targetLang': 'en'}})
             await page.close()
 
-        # ---------- 弹窗 ----------
+        # ---------- 面板（工具栏弹窗） ----------
         if run('popup'):
-            print('\n[popup] 弹窗功能')
+            print('\n[popup] 面板：首页与设置')
             pp = await ctx.new_page()
-            await pp.set_viewport_size({'width': 340, 'height': 680})
-            await pp.goto(f'chrome-extension://{eid}/popup/popup.html')
-            await pp.wait_for_timeout(500)
+            await pp.set_viewport_size({'width': 400, 'height': 590})
+            await pp.goto(f'chrome-extension://{eid}/panel/panel.html')
+            await pp.wait_for_timeout(600)
+            check('首页显示生词本与引擎卡片', await pp.locator('.stat').count() == 2)
+            await pp.screenshot(path=f'{OUTPUT}/panel-home.png')
             await pp.locator('#quickInput').fill('Knowledge is power.')
             await pp.locator('#quickInput').press('Enter')
             out = await quick_result(pp)
@@ -206,19 +208,83 @@ async def main():
             await pp.locator('#quickInput').press('Enter')
             out = await quick_result(pp)
             check('快速翻译 中→英（自动互译）', 'knowledge' in out.lower(), out)
-            await pp.locator('#targetLang').select_option('ja')
-            await pp.wait_for_timeout(300)
+
+            await pp.locator('.rail [data-go=settings]').click()
+            await pp.wait_for_timeout(200)
+            check('设置页分组行数 ≥ 12', await pp.locator('.ri').count() >= 12, await pp.locator('.ri').count())
+            await pp.screenshot(path=f'{OUTPUT}/panel-settings.png')
+            await pp.locator('[data-pick=targetLang]').click()
+            await pp.locator('[data-set=ja]').click()
+            await pp.wait_for_timeout(200)
             st = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.targetLang)")
-            check('切换目标语言已保存', st == 'ja', st)
-            await pp.locator('#engine').select_option('deepl')
-            await pp.wait_for_timeout(300)
-            note = await pp.locator('#note').inner_text()
-            check('选择未配置引擎时提示去设置', '需要 API Key' in note, note)
-            await pp.locator('#targetLang').select_option('zh-CN')
-            await pp.locator('#engine').select_option('google')
-            await pp.wait_for_timeout(300)
-            await pp.screenshot(path=f'{OUTPUT}/real-popup.png', full_page=True)
+            check('选项页切换翻译语言已保存', st == 'ja', st)
+            await pp.locator('[data-act=back]').click()
+            val = await pp.locator('[data-pick=targetLang] .val').inner_text()
+            check('返回设置页显示新值', val == '日本語', val)
+            await pp.locator('[data-pick=targetLang]').click()
+            await pp.locator('[data-set="zh-CN"]').click()
+
+            await pp.locator('.rail [data-go=settings]').click()
+            await pp.locator('[data-pick=engine]').click()
+            await pp.wait_for_timeout(200)
+            await pp.screenshot(path=f'{OUTPUT}/panel-engines.png')
+            await pp.locator('[data-set=deepl]').click()
+            await pp.wait_for_timeout(200)
+            t = await pp.locator('#toast').inner_text()
+            check('选择未配置引擎时提示需要 API Key', '需要先配置 API Key' in t, t)
+            await pp.locator('[data-set=google]').click()
+            await pp.wait_for_timeout(200)
             await pp.close()
+
+        # ---------- 网页内侧边面板（抽屉） ----------
+        if run('drawer'):
+            print('\n[drawer] 网页内侧边面板与生词本')
+            await sw.evaluate("()=>chrome.storage.local.set({words:[]})")
+            page = await ctx.new_page()
+            await page.goto(LOCAL)
+            await page.wait_for_timeout(600)
+            await page.locator('glimmer-ui >> .ball').hover()
+            await page.wait_for_timeout(300)
+            await page.locator('glimmer-ui >> [data-act=panel]').click()
+            frame = None
+            for _ in range(20):
+                frame = next((f for f in page.frames if 'panel/panel.html' in f.url), None)
+                if frame:
+                    break
+                await asyncio.sleep(0.2)
+            check('悬浮球菜单打开侧边面板', frame is not None)
+            await frame.wait_for_selector('.hero')
+            await page.wait_for_timeout(400)
+            await page.screenshot(path=f'{OUTPUT}/drawer.png')
+            await frame.locator('.hero [data-act=togglePage]').click()
+            n = await wait_count(page, 9)
+            check('在面板中开启整页翻译', n >= 9, f'{n} 段')
+            await page.locator('glimmer-ui >> .ball').click()
+            await page.wait_for_timeout(500)
+            on = await frame.locator('.hero [data-act=togglePage]').is_checked()
+            check('悬浮球关闭翻译后面板状态同步', on is False)
+
+            box = await page.locator('#sel').bounding_box()
+            await page.mouse.move(box['x'] + 2, box['y'] + 10)
+            await page.mouse.down()
+            await page.mouse.move(box['x'] + 60, box['y'] + 10, steps=5)
+            await page.mouse.up()
+            await page.wait_for_timeout(300)
+            await page.locator('glimmer-ui >> .sel-icon').click()
+            await page.wait_for_timeout(2000)
+            await page.locator('glimmer-ui >> .p-save').click()
+            await page.wait_for_timeout(500)
+            saved = await page.locator('glimmer-ui >> .p-save').inner_text()
+            check('划词面板收藏单词', '已收藏' in saved, saved)
+            cnt = await frame.locator('.stat b').first.inner_text()
+            check('面板生词数实时更新', cnt == '1', cnt)
+            await page.keyboard.press('Escape')
+            await page.wait_for_timeout(300)
+            await page.screenshot(path=f'{OUTPUT}/drawer-words.png')
+            await frame.locator('.rail [data-act=close]').click()
+            await page.wait_for_timeout(500)
+            check('点击关闭按钮收起面板', await page.evaluate("!document.querySelector('glimmer-ui').shadowRoot.querySelector('.drawer')"))
+            await page.close()
 
         # ---------- 总是翻译网站规则 ----------
         if run('always'):
