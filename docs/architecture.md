@@ -242,7 +242,7 @@ yt-hook.js (MAIN, document_start)          youtube.js (isolated)
 
 ### 3.8 面板：一个页面，两种形态
 
-侧边面板需要出现在两个地方：点击工具栏图标时的弹窗，以及网页内从右侧滑出的抽屉。两处内容完全一样——首页、设置、生词本、右侧图标栏。
+侧边面板需要出现在两个地方：网页内从右侧滑出的抽屉（点击工具栏图标或悬浮球菜单），以及无法嵌入网页时（`chrome://` 等内置页面）的工具栏弹窗。两处内容完全一样——首页、设置、生词本、右侧图标栏。
 
 | 方案 | 做法 | 问题 |
 | --- | --- | --- |
@@ -250,8 +250,13 @@ yt-hook.js (MAIN, document_start)          youtube.js (isolated)
 | **一个扩展页面（采用）** | `panel/panel.html` 既作弹窗，又以 iframe 嵌入网页 | 需要把面板资源声明为 `web_accessible_resources` |
 
 ```
-工具栏图标 ──▶ panel.html            （弹窗，chrome.tabs.query 找当前标签页）
-悬浮球“面板” ─▶ <glimmer-ui> Shadow DOM
+工具栏图标 ──▶ background.onActionClick
+                 ├ ping 内容脚本，不在则 chrome.scripting 注入
+                 ├ 成功 ──▶ tabs.sendMessage(toggleDrawer) ─┐
+                 └ 失败 ──▶ setPopup + openPopup ──▶ panel.html（弹窗）
+悬浮球“面板” ───────────────────────────────────────────────┤
+                                                            ▼
+               <glimmer-ui> Shadow DOM
                  └ .drawer
                     └ <iframe src="panel.html?mode=drawer">
                          │ runtime.sendMessage(tabInfo) → sender.tab
@@ -317,7 +322,7 @@ settings
 
 读取时与 `DEFAULT_SETTINGS` 深合并：对象递归合并，数组整体替换。新版本增加设置项时只需在默认值里添加，老用户无需迁移脚本。
 
-**生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳 }`，按小写去重，上限 5000 条。
+**生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳, m: 是否已掌握 }`，按小写去重，上限 5000 条。“本页生词”由面板把整个生词表发给内容脚本，内容脚本对 `document.body.innerText` 分词后取交集，不额外存储。
 
 **缓存**（IndexedDB `glimmer-cache` / 对象仓库 `tr`）：键为缓存键字符串，值为 `{ v: 译文, t: 写入时间 }`。
 

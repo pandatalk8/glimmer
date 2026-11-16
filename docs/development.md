@@ -71,6 +71,8 @@
 | `translateSelection` | `text`，弹出划词面板（右键菜单使用） |
 | `getState` | 返回 `{ active, units, host }`，仅顶层 frame 响应 |
 | `toggleDrawer` | `view`（可选），打开或收起网页内侧边面板 |
+| `ping` | 返回 `true`，后台用来判断内容脚本是否已注入 |
+| `pageWords` | `words: string[]`，返回其中出现在当前网页上的词（单词整词匹配、短语子串匹配，不区分大小写） |
 
 内容脚本发给面板：整页翻译开关变化时广播 `{ type: 'pageStateChanged', active }`，面板据此同步“翻译此页面”开关。
 
@@ -118,12 +120,20 @@
 
 ### 侧边面板
 
-`panel/panel.html` 同时是工具栏弹窗和网页内抽屉：
+`panel/panel.html` 同时是网页内抽屉和工具栏弹窗：
 
 | 形态 | 打开方式 | URL | 如何找到当前网页 |
 | --- | --- | --- | --- |
-| 弹窗 | 点击工具栏图标 | `panel.html` | `chrome.tabs.query({ active: true })` |
-| 抽屉 | 悬浮球菜单“面板” | `panel.html?mode=drawer&view=home` | 向后台发送 `tabInfo`，取 `sender.tab` |
+| 抽屉（默认） | 点击工具栏图标、`Alt+Q`、悬浮球菜单“面板” | `panel.html?mode=drawer&view=home` | 向后台发送 `tabInfo`，取 `sender.tab` |
+| 弹窗（兜底） | 在无法注入脚本的页面点击工具栏图标 | `panel.html` | `chrome.tabs.query({ active: true })` |
+
+工具栏点击的处理在 `background/index.js` 的 `onActionClick`：
+
+1. 向标签页发送 `ping`；没有回应说明内容脚本不在（安装扩展前已打开的网页），用 `chrome.scripting` 注入 `content.js` 和 `content.css`
+2. 注入成功则发送 `toggleDrawer` 开关抽屉
+3. 注入失败（`chrome://` 等内置页面）则 `chrome.action.setPopup` 把该标签页切换为弹窗并 `openPopup()`；标签页跳转到新网页时（`tabs.onUpdated` 的 `loading`）恢复为抽屉模式
+
+因为 `manifest.json` 不再设置 `default_popup`，点击图标才会触发 `chrome.action.onClicked`。
 
 面板是单页应用：`VIEWS` 中定义首页、设置、生词本和选项页四类视图，右侧图标栏切换视图。设置页的每一行都由 `PICKERS` 中的一项驱动，每项提供 `get(settings)` 读取当前值、`options()` 列出选项、`set(value)` 返回要保存的设置片段。新增一个面板设置项只需在 `PICKERS` 加一项，再在 `VIEWS.settings` 中加一行。
 

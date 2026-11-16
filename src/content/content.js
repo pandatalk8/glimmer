@@ -748,6 +748,16 @@
     }
   });
 
+  // 生词本中哪些词出现在当前网页上：单词按整词匹配，短语按子串匹配，不区分大小写
+  function findPageWords(list) {
+    const text = (document.body?.innerText || '').toLowerCase();
+    const tokens = new Set(text.match(/[\p{L}\p{N}'’-]+/gu) || []);
+    return list.filter((w) => {
+      const k = String(w).trim().toLowerCase();
+      return k && (/\s/.test(k) ? text.includes(k) : tokens.has(k));
+    });
+  }
+
   // ---------------- 消息 ----------------
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (window.top !== window && msg.type !== 'togglePage' && msg.type !== 'setPage') return;
@@ -756,6 +766,8 @@
     if (msg.type === 'translateSelection') openPanel(msg.text, innerWidth / 2, innerHeight / 3);
     if (msg.type === 'toggleDrawer') toggleDrawer(msg.view);
     if (msg.type === 'getState') reply({ active: state.active, units: units.length, host });
+    if (msg.type === 'ping') reply(true);
+    if (msg.type === 'pageWords') reply(findPageWords(msg.words || []));
   });
 
   // ---------------- 初始化 ----------------

@@ -40,6 +40,9 @@ const IC = {
   inbox: svg('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>', 34),
   speak: svg('<path d="M11 5 6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>', 16),
   trash: svg('<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', 16),
+  checkSq: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>', 18),
+  heartSm: `<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-9.6-9.2C1 8.6 3 5 6.6 5c2 0 3.4 1.1 4.4 2.5C12 6.1 13.4 5 15.4 5 19 5 21 8.6 19.6 11.8 17.5 16.4 12 21 12 21z"/></svg>`,
+  down: svg('<path d="m6 9 6 6 6-6"/>', 14),
 };
 
 // ---------------- 状态 ----------------
@@ -51,6 +54,29 @@ let page = { supported: false, active: false };
 let view = qs.get('view') || 'home';
 let history = [];
 let quick = { text: '', out: '', err: false };
+let pageWords = []; // 生词本中出现在当前网页上的词
+let expanded = false; // “展开释义”
+try {
+  expanded = localStorage.getItem('gl-expand') === '1';
+} catch {}
+
+const keyOf = (w) => String(w).trim().toLowerCase();
+const findWord = (k) => words.find((w) => keyOf(w.w) === k);
+
+async function refreshPageWords() {
+  pageWords = [];
+  if (!page.supported || !words.length) return;
+  try {
+    const hits = await chrome.tabs.sendMessage(tab.id, { type: 'pageWords', words: words.map((w) => w.w) }, { frameId: 0 });
+    const set = new Set((hits || []).map(keyOf));
+    pageWords = words.filter((w) => set.has(keyOf(w.w))).sort((a, b) => a.w.localeCompare(b.w, 'en'));
+  } catch {}
+}
+
+async function saveWords(next) {
+  words = next;
+  await chrome.storage.local.set({ words });
+}
 
 async function resolveTab() {
   if (MODE === 'drawer') {
@@ -219,23 +245,41 @@ function header(title) {
     <h1>${esc(title)}</h1></header>`;
 }
 
-function wordList(list) {
+// 生词行：已掌握（勾选）、收藏（红心，点击取消）、朗读
+function wordRows(list, showTrans) {
   return list
-    .map(
-      (w, i) => `<div class="word">
-        <div class="wtx"><b>${esc(w.w)}</b><small>${esc(w.t || '')}</small></div>
-        <button class="mini" data-act="speak" data-i="${i}" title="朗读">${IC.speak}</button>
-        <button class="mini" data-act="delWord" data-i="${i}" title="删除">${IC.trash}</button>
-      </div>`
-    )
+    .map((w) => {
+      const k = esc(keyOf(w.w));
+      return `<div class="word ${w.m ? 'mastered' : ''}">
+        <div class="wtx"><b>${esc(w.w)}</b>${showTrans && w.t ? `<small>${esc(w.t)}</small>` : ''}</div>
+        <button class="mini ${w.m ? 'ok' : ''}" data-act="master" data-k="${k}" title="${w.m ? '取消已掌握' : '标记为已掌握'}">${IC.checkSq}</button>
+        <button class="mini heart" data-act="unsave" data-k="${k}" title="从生词本移除">${IC.heartSm}</button>
+        <button class="mini" data-act="speak" data-k="${k}" title="朗读">${IC.speak}</button>
+      </div>`;
+    })
     .join('');
+}
+
+function expandBtn() {
+  return `<button class="link ${expanded ? 'open' : ''}" data-act="expand">${expanded ? '收起释义' : '展开释义'} ${IC.down}</button>`;
 }
 
 const VIEWS = {
   home() {
     const eng = engineOf(S.engine);
     const always = !!host && hostMatches(host, S.alwaysSites);
-    const recent = words.slice(0, 5);
+    let wordsCard;
+    if (!words.length) {
+      wordsCard = `<div class="empty">${IC.inbox}<div>暂无生词，在划词翻译面板中<br/>点击 ☆ 收藏单词</div></div>`;
+    } else if (!page.supported) {
+      wordsCard = `<div class="wl-head"><span>最近收藏</span>${expandBtn()}</div>${wordRows(words.slice(0, 5), expanded)}`;
+    } else if (!pageWords.length) {
+      wordsCard = `<div class="wl-head"><span>本页生词 <em class="num">0</em></span></div>
+        <div class="empty">${IC.inbox}<div>本页没有生词本中的单词</div>
+        <button class="link" data-go="words">查看全部生词 ${IC.chev}</button></div>`;
+    } else {
+      wordsCard = `<div class="wl-head"><span>本页生词 <em class="num">${pageWords.length}</em></span>${expandBtn()}</div>${wordRows(pageWords, expanded)}`;
+    }
     return `${header()}
     <div class="body">
       <div class="grid2">
@@ -261,17 +305,11 @@ const VIEWS = {
           : `<div class="warn">当前页面不支持网页翻译（浏览器内置页面，或安装扩展前已打开的页面，刷新后即可使用）。</div>`
       }
 
+      <div class="card words-card">${wordsCard}</div>
+
       <div class="card box quick">
         <textarea id="quickInput" rows="2" placeholder="输入文字，Enter 翻译（中英自动互译）">${esc(quick.text)}</textarea>
         ${quick.out ? `<div class="qout ${quick.err ? 'err' : ''}" id="quickOut">${esc(quick.out)}</div>` : ''}
-      </div>
-
-      <div class="card">
-        ${
-          recent.length
-            ? `<div class="wl-head"><span>最近收藏</span><button class="link" data-go="words">全部 ${IC.chev}</button></div>${wordList(recent)}`
-            : `<div class="empty">${IC.inbox}<div>暂无生词，在划词翻译面板中<br/>点击 ☆ 收藏单词</div></div>`
-        }
       </div>
     </div>`;
   },
@@ -312,9 +350,12 @@ const VIEWS = {
   },
 
   words() {
+    const mastered = words.filter((w) => w.m).length;
     return `${header(`生词本 · ${words.length}`)}
-    <div class="body"><div class="card">${
-      words.length ? wordList(words) : `<div class="empty">${IC.inbox}<div>暂无生词</div></div>`
+    <div class="body"><div class="card words-card">${
+      words.length
+        ? `<div class="wl-head"><span>已掌握 ${mastered} / ${words.length}</span>${expandBtn()}</div>${wordRows(words, expanded)}`
+        : `<div class="empty">${IC.inbox}<div>暂无生词</div></div>`
     }</div></div>`;
   },
 
@@ -423,19 +464,28 @@ document.addEventListener('click', async (e) => {
     case 'shortcuts':
       chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
       return MODE === 'popup' && window.close();
+    case 'expand':
+      expanded = !expanded;
+      try {
+        localStorage.setItem('gl-expand', expanded ? '1' : '0');
+      } catch {}
+      return render();
     case 'speak': {
-      const w = words[+d.i];
+      const w = findWord(d.k);
+      if (!w) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(w.w);
-      u.lang = 'en-US';
+      u.lang = /[一-鿿]/.test(w.w) ? 'zh-CN' : 'en-US';
       return speechSynthesis.speak(u);
     }
-    case 'delWord': {
-      const w = words[+d.i];
-      words = words.filter((x) => x !== w);
-      await chrome.storage.local.set({ words });
-      render();
-      return toast('已删除');
+    case 'master': {
+      await saveWords(words.map((w) => (keyOf(w.w) === d.k ? { ...w, m: !w.m } : w)));
+      const w = findWord(d.k);
+      return toast(w?.m ? '已标记为掌握' : '已取消掌握');
+    }
+    case 'unsave': {
+      await saveWords(words.filter((w) => keyOf(w.w) !== d.k));
+      return toast('已从生词本移除');
     }
   }
 });
@@ -456,7 +506,10 @@ document.addEventListener('input', (e) => {
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'local') return;
   if (changes.settings) S = await getSettings();
-  if (changes.words) words = changes.words.newValue || [];
+  if (changes.words) {
+    words = changes.words.newValue || [];
+    await refreshPageWords();
+  }
   if (document.activeElement?.id !== 'quickInput') render();
 });
 chrome.runtime.onMessage.addListener((msg, sender) => {
@@ -472,5 +525,6 @@ try {
   host = new URL(tab?.url || '').hostname;
 } catch {}
 await refreshPage();
+await refreshPageWords();
 if (view.startsWith('pick:')) history = ['settings'];
 render();

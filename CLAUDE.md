@@ -16,7 +16,7 @@
 
 ```bash
 python3 tests/e2e.py          # 核心回归，14 项
-python3 tests/e2e_real.py     # 真实网站与交互，37 项
+python3 tests/e2e_real.py     # 真实网站与交互，46 项
 python3 tests/e2e_engines.py  # 用 tests/.env.local 中的 Key 测试引擎
 ```
 

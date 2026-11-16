@@ -26,9 +26,8 @@ html[data-mode='popup'] .shell {
   border-radius: 0;
 }
 html[data-mode='drawer'] .main {
-  border-radius: 18px 0 0 18px;
-  border: 1px solid var(--line);
-  border-right: 0;
+  border-radius: 14px 0 0 0;
+  border-left: 1px solid var(--line);
 }
 .hd {
   display: flex;
@@ -427,6 +426,50 @@ html[data-mode='drawer'] .main {
   color: var(--fg);
 }
 
+/* 本页生词 / 生词本列表 */
+.words-card {
+  background: transparent;
+}
+.words-card .wl-head {
+  padding: 4px 4px 8px;
+  font-size: 14px;
+}
+.wl-head .num {
+  font-style: normal;
+  color: var(--gold);
+  margin-left: 4px;
+}
+.link.open svg {
+  transform: rotate(180deg);
+}
+.words-card .word {
+  align-items: center;
+  padding: 10px 4px;
+  min-height: 46px;
+  border-top: 1px solid var(--line);
+}
+.words-card .word b {
+  font-size: 15px;
+}
+.words-card .word small {
+  margin-top: 2px;
+}
+.word.mastered b {
+  color: var(--dim);
+}
+.mini.ok {
+  color: var(--ok);
+}
+.mini.heart {
+  color: #ff4d5e;
+}
+.mini.heart:hover {
+  color: #ff7a87;
+}
+.words-card .empty .link {
+  margin-top: 10px;
+}
+
 /* ---------- 右侧图标栏 ---------- */
 .rail {
   width: 64px;
@@ -440,9 +483,7 @@ html[data-mode='drawer'] .main {
   border-left: 1px solid var(--line);
 }
 html[data-mode='drawer'] .rail {
-  border: 1px solid var(--line);
   border-left: 0;
-  margin-left: 0;
 }
 .rb {
   position: relative;

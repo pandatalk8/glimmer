@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover input popup drawer always import style ctxmenu
+场景：wiki hn mdn hover input popup drawer toolbar always import style ctxmenu
 """
 import asyncio, functools, http.server, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -285,6 +285,60 @@ async def main():
             await page.wait_for_timeout(500)
             check('点击关闭按钮收起面板', await page.evaluate("!document.querySelector('glimmer-ui').shadowRoot.querySelector('.drawer')"))
             await page.close()
+
+        # ---------- 工具栏图标开关侧面板 + 本页生词 ----------
+        if run('toolbar'):
+            print('\n[toolbar] 工具栏图标开关侧面板、本页生词')
+            await sw.evaluate("""()=>chrome.storage.local.set({words:[
+              {w:'vocabulary',t:'词汇',ts:3},{w:'grammar',t:'语法',ts:2},{w:'Learners',t:'学习者',ts:1},
+              {w:'serendipity',t:'意外发现',ts:0},{w:'comprehensible input',t:'可理解输入',ts:4}]})""")
+            page = await ctx.new_page()
+            await page.goto(LOCAL)
+            await page.wait_for_timeout(600)
+            click = """async ()=>{const [t]=await chrome.tabs.query({url:'http://127.0.0.1:8765/*'});return self.__glimmerActionClick(t)}"""
+            r = await sw.evaluate(click)
+            check('点击工具栏图标在网页内打开侧面板', r == 'drawer', r)
+            frame = None
+            for _ in range(20):
+                frame = next((f for f in page.frames if 'panel/panel.html' in f.url), None)
+                if frame:
+                    break
+                await asyncio.sleep(0.2)
+            await frame.wait_for_selector('.words-card .wl-head')
+            await page.wait_for_timeout(400)
+            box = await page.evaluate("""()=>{const r=document.querySelector('glimmer-ui').shadowRoot.querySelector('.drawer').getBoundingClientRect();
+              return [r.top, Math.round(innerHeight-r.bottom), Math.round(innerWidth-r.right), r.width]}""")
+            check('面板贴右边缘、占满全高', box[0] == 0 and box[1] == 0 and box[2] == 0, box)
+            head = await frame.locator('.words-card .wl-head').inner_text()
+            names = await frame.locator('.words-card .word b').all_inner_texts()
+            check('本页生词数量正确（4 个，排除页面上没有的词）', '本页生词' in head and len(names) == 4, f'{head!r} {names}')
+            check('本页生词按字母排序', names == sorted(names, key=str.lower), names)
+            await frame.locator('[data-act=expand]').click()
+            await page.wait_for_timeout(200)
+            trans = await frame.locator('.words-card .word small').all_inner_texts()
+            check('展开释义显示译文', '语法' in trans and len(trans) == 4, trans)
+            await page.screenshot(path=f'{OUTPUT}/toolbar-drawer.png')
+            await frame.locator('.words-card .word:has(b:text("grammar")) [data-act=master]').click()
+            await page.wait_for_timeout(300)
+            m = await sw.evaluate("chrome.storage.local.get('words').then(r=>r.words.find(w=>w.w==='grammar').m)")
+            check('标记已掌握', m is True, m)
+            await frame.locator('.words-card .word:has(b:text("vocabulary")) [data-act=unsave]').click()
+            await page.wait_for_timeout(400)
+            names = await frame.locator('.words-card .word b').all_inner_texts()
+            check('取消收藏后从本页生词移除', 'vocabulary' not in names and len(names) == 3, names)
+            r = await sw.evaluate(click)
+            await page.wait_for_timeout(500)
+            gone = await page.evaluate("!document.querySelector('glimmer-ui').shadowRoot.querySelector('.drawer')")
+            check('再次点击工具栏图标收起侧面板', r == 'drawer' and gone, r)
+            await page.close()
+
+            cp = await ctx.new_page()
+            await cp.goto('chrome://version')
+            await cp.wait_for_timeout(500)
+            r = await sw.evaluate("""async ()=>{const t=(await chrome.tabs.query({})).find(t=>!t.url);
+              const how=await self.__glimmerActionClick(t);const p=await chrome.action.getPopup({tabId:t.id});return [how,p]}""")
+            check('浏览器内置页面退回弹窗形态', r[1].endswith('panel/panel.html'), r)
+            await cp.close()
 
         # ---------- 总是翻译网站规则 ----------
         if run('always'):

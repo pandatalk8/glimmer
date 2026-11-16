@@ -93,6 +93,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// ---------- 工具栏图标：在网页内开关侧面板 ----------
+// 安装扩展前已打开的网页没有内容脚本，点击时按需注入，免去刷新
+async function ensureContent(tabId) {
+  try {
+    if (await chrome.tabs.sendMessage(tabId, { type: 'ping' }, { frameId: 0 })) return true;
+  } catch {}
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ['src/content/content.css'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content/content.js'] });
+    return true;
+  } catch {
+    return false; // chrome:// 等浏览器内置页面禁止注入
+  }
+}
+
+async function onActionClick(tab) {
+  if (!tab?.id) return 'none';
+  if (await ensureContent(tab.id)) {
+    await chrome.tabs.sendMessage(tab.id, { type: 'toggleDrawer' }, { frameId: 0 });
+    return 'drawer';
+  }
+  // 无法嵌入面板的页面：本标签页改用弹窗形态
+  await chrome.action.setPopup({ tabId: tab.id, popup: 'panel/panel.html' });
+  try {
+    await chrome.action.openPopup();
+    return 'popup';
+  } catch {
+    return 'none';
+  }
+}
+chrome.action.onClicked.addListener(onActionClick);
+self.__glimmerActionClick = onActionClick; // 供端到端测试调用
+
+// 标签页跳转到新网页时，恢复为“点击图标开关侧面板”
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading') chrome.action.setPopup({ tabId, popup: '' }).catch(() => {});
+});
+
 // ---------- 右键菜单 & 快捷键 ----------
 chrome.runtime.onInstalled.addListener((details) => {
   chrome.contextMenus.removeAll(() => {
