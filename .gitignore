@@ -9,3 +9,8 @@ tests/output/
 tests/.env.local
 .env*.local
 __pycache__/
+# Supabase CLI 本地文件与密钥
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/functions/.env

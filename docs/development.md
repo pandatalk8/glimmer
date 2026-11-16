@@ -61,6 +61,13 @@
 | `tabInfo` | — | 发送方所在标签页 `{ id, url }`；面板以抽屉形式运行时用它找到自己所在的网页 |
 | `toggleWord` | `word`、`trans`、`url` | `{ saved, count }`，已收藏则取消，未收藏则加入生词本 |
 | `hasWord` | `word` | `boolean` |
+| `accountState` | — | `{ configured, loggedIn, email, account }`，读本地缓存 |
+| `accountRefresh` | — | 从数据库刷新会员状态后返回同上 |
+| `accountSignUp` / `accountSignIn` | `email`、`password` | 注册返回 `{ needConfirm }`；登录返回 `{ account }` |
+| `accountSignOut` | — | 退出并清除本地会话 |
+| `accountReset` | `email` | 发送重置密码邮件 |
+| `billingCheckout` | `interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页 |
+| `billingPortal` | — | 在新标签页打开 Stripe 客户门户 |
 
 后台发给内容脚本（`chrome.tabs.sendMessage`）：
 
@@ -117,6 +124,16 @@
 ### UI 隔离
 
 悬浮球、划词图标、翻译面板和 Toast 都挂在 `<glimmer-ui>` 的 Shadow DOM 中，样式来自 `src/content/ui.css`（已在 `web_accessible_resources` 中声明），与网页样式完全隔离。
+
+### 账户与后端
+
+`src/background/account.js` 直接调用 Supabase REST 接口，`src/shared/config.js` 填写项目地址。开发和测试时可以不改 `config.js`，而是在后台写入覆盖地址：
+
+```js
+chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: '...' } })
+```
+
+后端代码在 `supabase/`，部署步骤见 [后端部署指南](backend.md)。新增需要 Pro 的功能时，在后台用 `account.isPro()` 判断；如果功能消耗服务端资源，还要在 Edge Function 中根据 `profiles.plan` 校验。
 
 ### 侧边面板
 
@@ -241,6 +258,8 @@ await sw.evaluate("""async()=>{const [t]=await chrome.tabs.query({active:true});
 | 关闭翻译 | `document.querySelectorAll('gl-trans').length === 0` |
 | 划词 | 选中文本后出现 `.sel-icon`，点击后面板显示译文 |
 | 大模型批量 | 用本地 mock 的 `/v1/chat/completions` 服务，确认多段只发一次请求 |
+| 账户与订阅 | `tests/e2e_account.py` 启动模拟的 Supabase 接口，覆盖注册、登录、错误提示、令牌续期、支付返回变 Pro |
+| 后端订阅逻辑 | `deno test --allow-env --allow-net --allow-read supabase/functions/` |
 | YouTube | 用 `window.postMessage({source:'glimmer-yt', url, body})` 注入 json3 字幕，检查播放器内的 `.yt-sub` |
 
 > 注意：Service Worker 中不允许动态 `import()`，测试时不能在 `sw.evaluate` 里导入引擎模块，应通过扩展页面发送 `translate` 消息来调用。

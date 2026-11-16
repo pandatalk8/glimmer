@@ -1,0 +1,22 @@
+# Supabase CLI 配置（supabase link 后 project_id 会被替换为你的项目）
+project_id = "glimmer-translate"
+
+[auth]
+site_url = "https://example.com"
+# 注册需要邮箱验证；本地开发可改为 false
+[auth.email]
+enable_confirmations = true
+
+# Stripe webhook 由 Stripe 调用，没有用户 JWT，需关闭 JWT 校验（改用 Stripe 签名校验）
+[functions.stripe-webhook]
+verify_jwt = false
+
+# 支付返回页是浏览器直接打开的公开页面
+[functions.billing-return]
+verify_jwt = false
+
+[functions.billing-checkout]
+verify_jwt = true
+
+[functions.billing-portal]
+verify_jwt = true

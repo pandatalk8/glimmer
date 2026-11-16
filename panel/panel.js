@@ -43,6 +43,10 @@ const IC = {
   checkSq: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>', 18),
   heartSm: `<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-9.6-9.2C1 8.6 3 5 6.6 5c2 0 3.4 1.1 4.4 2.5C12 6.1 13.4 5 15.4 5 19 5 21 8.6 19.6 11.8 17.5 16.4 12 21 12 21z"/></svg>`,
   down: svg('<path d="m6 9 6 6 6-6"/>', 14),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  crown: svg('<path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z"/>', 16),
+  card: svg('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>', 18),
+  refresh: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>', 16),
 };
 
 // ---------------- 状态 ----------------
@@ -59,6 +63,25 @@ let expanded = false; // “展开释义”
 try {
   expanded = localStorage.getItem('gl-expand') === '1';
 } catch {}
+
+// 账户：{ configured, loggedIn, email, account: { plan, status, periodEnd, cancelAtPeriodEnd, hasBilling } }
+let acct = { configured: false, loggedIn: false, email: null, account: null };
+let auth = { mode: 'signin', email: '', msg: '', kind: '', busy: false };
+const isPro = () => acct.account?.plan === 'pro';
+
+async function send(type, data = {}) {
+  const r = await chrome.runtime.sendMessage({ type, ...data });
+  if (!r?.ok) throw new Error(r?.error || '操作失败');
+  return r.data;
+}
+
+async function loadAccount(refresh = false) {
+  try {
+    acct = await send(refresh ? 'accountRefresh' : 'accountState');
+  } catch (e) {
+    if (refresh) acct = await send('accountState').catch(() => acct);
+  }
+}
 
 const keyOf = (w) => String(w).trim().toLowerCase();
 const findWord = (k) => words.find((w) => keyOf(w.w) === k);
@@ -238,7 +261,7 @@ function header(title) {
   if (!title) {
     return `<header class="hd">
       <div class="brand"><img src="../icons/icon48.png" alt="" /><span>微光翻译</span></div>
-      <span class="chip">v${VERSION}</span></header>`;
+      ${isPro() ? `<button class="chip pro" data-go="account" title="Pro 会员">${IC.crown}Pro</button>` : `<span class="chip">v${VERSION}</span>`}</header>`;
   }
   return `<header class="hd">
     ${history.length ? `<button class="back" data-act="back" title="返回">${IC.back}</button>` : ''}
@@ -321,9 +344,13 @@ const VIEWS = {
     const link = (act, hash, icon, label, val = '') =>
       `<button class="ri" data-act="${act}" data-hash="${hash}"><span class="ic">${icon}</span>
         <span class="lb">${label}</span><span class="val">${val}</span><span class="chev">${IC.chev}</span></button>`;
+    const acctVal = acct.loggedIn ? esc(acct.email || '') : '登录 / 注册';
+    const acctTag = isPro() ? `<span class="tag pro">${IC.crown}Pro</span>` : '';
     return `${header('设置')}
     <div class="body">
       <div class="group">
+        <button class="ri" data-go="account"><span class="ic">${IC.user}</span>
+          <span class="lb">账户</span><span class="val">${acctVal}</span>${acctTag}<span class="chev">${IC.chev}</span></button>
         ${row('engine', IC.engine, '', '翻译引擎')}
       </div>
       <div class="group"><div class="gtitle">主功能设置</div>
@@ -346,6 +373,73 @@ const VIEWS = {
         ${link('options', '', IC.sliders, '完整设置')}
         ${link('options', 'advanced', IC.info, '关于', 'v' + VERSION)}
       </div>
+    </div>`;
+  },
+
+  account() {
+    const msg = auth.msg ? `<div class="msg ${auth.kind}">${esc(auth.msg)}</div>` : '';
+    if (!acct.configured) {
+      return `${header('账户')}<div class="body"><div class="warn">账户服务尚未配置。开发者需要在 <code>src/shared/config.js</code> 中填写 Supabase 项目地址和 anon key，详见 <code>docs/backend.md</code>。</div></div>`;
+    }
+
+    // ---- 未登录：登录 / 注册 ----
+    if (!acct.loggedIn) {
+      const signup = auth.mode === 'signup';
+      return `${header('账户')}
+      <div class="body">
+        <div class="auth-tabs">
+          <button class="${signup ? '' : 'on'}" data-act="authMode" data-mode="signin">登录</button>
+          <button class="${signup ? 'on' : ''}" data-act="authMode" data-mode="signup">注册</button>
+        </div>
+        <form class="auth-form" id="authForm" novalidate>
+          <label>邮箱<input type="email" name="email" autocomplete="email" placeholder="you@example.com" value="${esc(auth.email)}" required /></label>
+          <label>密码<input type="password" name="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? '至少 6 位' : ''}" minlength="6" required /></label>
+          ${signup ? '<label>确认密码<input type="password" name="password2" autocomplete="new-password" required /></label>' : ''}
+          ${msg}
+          <button class="primary submit" type="submit" ${auth.busy ? 'disabled' : ''}>${auth.busy ? '请稍候…' : signup ? '注册' : '登录'}</button>
+        </form>
+        ${signup ? '' : '<button class="link center" data-act="forgot">忘记密码？</button>'}
+        <div class="hint center">登录后可订阅 Pro 会员。账户由 Supabase 提供，密码不会保存在扩展中。</div>
+      </div>`;
+    }
+
+    // ---- 已登录 ----
+    const a = acct.account || {};
+    const pro = a.plan === 'pro';
+    const date = (iso) => (iso ? new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
+    let status = '';
+    if (pro && a.status === 'past_due') status = '付款失败，请在“管理订阅”中更新支付方式';
+    else if (pro && a.cancelAtPeriodEnd) status = `已取消续费，Pro 有效期至 ${date(a.periodEnd)}`;
+    else if (pro) status = `${a.status === 'trialing' ? '试用中，' : ''}下次续费：${date(a.periodEnd)}`;
+    else if (a.status === 'canceled') status = '订阅已结束';
+    const initial = esc((acct.email || '?').trim()[0].toUpperCase());
+
+    return `${header('账户')}
+    <div class="body">
+      <div class="card box acct">
+        <div class="avatar">${initial}</div>
+        <div class="acct-info"><b>${esc(acct.email || '')}</b>
+          <span class="plan ${pro ? 'pro' : ''}">${pro ? IC.crown + 'Pro 会员' : '免费版'}</span></div>
+        <button class="mini" data-act="acctRefresh" title="刷新会员状态">${IC.refresh}</button>
+      </div>
+      ${status ? `<div class="status-line">${esc(status)}</div>` : ''}
+      ${msg}
+      ${
+        pro
+          ? `<button class="ghost wide" data-act="portal">${IC.card} 管理订阅</button>
+             <div class="hint">在 Stripe 页面中更换方案、修改支付方式、取消订阅或下载发票。</div>`
+          : `<div class="card box pro-card">
+              <div class="pro-title">${IC.crown} 升级 Pro</div>
+              <div class="s">支持微光翻译持续开发，解锁 Pro 功能。</div>
+              <div class="pro-btns">
+                <button class="primary" data-act="checkout" data-interval="month" ${auth.busy ? 'disabled' : ''}>月付</button>
+                <button class="primary alt" data-act="checkout" data-interval="year" ${auth.busy ? 'disabled' : ''}>年付</button>
+              </div>
+              <div class="hint">点击后在新标签页打开 Stripe 安全支付，价格以支付页为准。</div>
+            </div>
+            ${a.hasBilling ? `<button class="link" data-act="portal">查看账单与发票 ${IC.chev}</button>` : ''}`
+      }
+      <button class="ghost wide danger" data-act="signOut">退出登录</button>
     </div>`;
   },
 
@@ -406,9 +500,86 @@ function render() {
 function go(next, push = true) {
   if (next === view) return;
   if (push && next.startsWith('pick:')) history.push(view);
+  else if (next === 'account' && view === 'settings') history = ['settings'];
   else history = [];
   view = next;
+  if (next === 'account') {
+    auth.msg = '';
+    // 进入账户页时后台刷新一次会员状态
+    if (acct.loggedIn) loadAccount(true).then(() => view === 'account' && render());
+  }
   render();
+}
+
+// 表单内的提示与按钮状态就地更新，不重绘表单，避免清空已输入的密码
+function showMsg(text, kind) {
+  auth.msg = text;
+  auth.kind = kind;
+  const form = $('#authForm');
+  if (!form) return render();
+  let m = form.querySelector('.msg');
+  if (!m) {
+    m = document.createElement('div');
+    form.querySelector('.submit').before(m);
+  }
+  m.className = 'msg ' + kind;
+  m.textContent = text;
+}
+
+function setBusy(on) {
+  auth.busy = on;
+  const btn = $('#authForm .submit');
+  if (!btn) return render();
+  btn.disabled = on;
+  btn.textContent = on ? '请稍候…' : auth.mode === 'signup' ? '注册' : '登录';
+}
+
+async function busy(fn) {
+  setBusy(true);
+  showMsg('', '');
+  try {
+    await fn();
+  } catch (e) {
+    showMsg(e.message, 'err');
+  } finally {
+    setBusy(false);
+  }
+  if (auth.msg === '') $('#authForm .msg')?.remove();
+}
+
+async function submitAuth(form) {
+  const f = new FormData(form);
+  const email = String(f.get('email') || '').trim();
+  const password = String(f.get('password') || '');
+  auth.email = email;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showMsg('邮箱格式不正确', 'err');
+  if (password.length < 6) return showMsg('密码至少需要 6 位', 'err');
+  if (auth.mode === 'signup' && password !== f.get('password2')) return showMsg('两次输入的密码不一致', 'err');
+
+  let done = false;
+  let confirmSent = false;
+  await busy(async () => {
+    if (auth.mode === 'signup') {
+      const r = await send('accountSignUp', { email, password });
+      if (r.needConfirm) return (confirmSent = true);
+    } else {
+      await send('accountSignIn', { email, password });
+    }
+    await loadAccount();
+    done = true;
+  });
+  if (confirmSent) {
+    // 切到登录表单，保留邮箱，提示去验证
+    auth.mode = 'signin';
+    render();
+    showMsg(`验证邮件已发送到 ${email}，点击邮件中的链接后回来登录`, 'ok');
+  }
+  if (done) {
+    auth.msg = '';
+    auth.mode = 'signin';
+    render();
+    toast('登录成功');
+  }
 }
 
 // ---------------- 交互 ----------------
@@ -447,6 +618,36 @@ document.addEventListener('click', async (e) => {
   switch (d.act) {
     case 'close':
       return close();
+    case 'authMode':
+      auth.mode = d.mode;
+      auth.msg = '';
+      return render();
+    case 'forgot': {
+      const email = ($('#authForm [name=email]')?.value || '').trim();
+      if (!email) return showMsg('请先填写邮箱，再点击“忘记密码”', 'err');
+      auth.email = email;
+      return busy(async () => {
+        await send('accountReset', { email });
+        showMsg(`重置密码邮件已发送到 ${email}`, 'ok');
+      });
+    }
+    case 'signOut':
+      auth = { ...auth, mode: 'signin', msg: '', kind: '', busy: false };
+      await send('accountSignOut').catch(() => {});
+      await loadAccount();
+      render();
+      return toast('已退出登录');
+    case 'acctRefresh':
+      await loadAccount(true);
+      render();
+      return toast('会员状态已刷新');
+    case 'checkout':
+      return busy(async () => {
+        await send('billingCheckout', { interval: d.interval });
+        showMsg('已在新标签页打开支付页面，完成支付后这里会自动更新', 'ok');
+      });
+    case 'portal':
+      return busy(() => send('billingPortal'));
     case 'back':
       view = history.pop() || 'home';
       return render();
@@ -490,6 +691,15 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'authForm') return;
+  e.preventDefault();
+  if (!auth.busy) submitAuth(e.target);
+});
+document.addEventListener('input', (e) => {
+  if (e.target.name === 'email' && e.target.closest('#authForm')) auth.email = e.target.value;
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.target.id === 'quickInput' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -510,7 +720,15 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     words = changes.words.newValue || [];
     await refreshPageWords();
   }
-  if (document.activeElement?.id !== 'quickInput') render();
+  if (changes.auth || changes.account) {
+    const before = acct.account?.plan;
+    await loadAccount();
+    if (acct.account?.plan !== before) auth.msg = ''; // 会员状态变化后，清掉“已打开支付页面”等旧提示
+  }
+  // 正在输入时不重绘，避免清空输入框
+  const a = document.activeElement;
+  const typing = a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type !== 'checkbox'));
+  if (!typing) render();
 });
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === 'pageStateChanged' && sender.tab?.id === tab?.id) {
@@ -526,5 +744,7 @@ try {
 } catch {}
 await refreshPage();
 await refreshPageWords();
+await loadAccount();
+if (acct.loggedIn) loadAccount(true).then(render); // 后台刷新会员状态
 if (view.startsWith('pick:')) history = ['settings'];
 render();

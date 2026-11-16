@@ -3,6 +3,9 @@ import { LANGUAGES } from '../shared/languages.js';
 import { google, microsoft, deepl } from './engines/mt.js';
 import { llmTranslate } from './engines/llm.js';
 import { cacheGetMany, cacheSetMany, cacheClear } from './cache.js';
+import * as account from './account.js';
+
+account.watchBillingReturn();
 
 const MT = { google, microsoft, deepl };
 
@@ -64,6 +67,18 @@ const handlers = {
   translate,
   tabInfo: (_msg, sender) => (sender.tab ? { id: sender.tab.id, url: sender.tab.url } : null),
   toggleWord,
+  // 账户与订阅
+  accountState: () => account.accountState(),
+  accountRefresh: async () => {
+    await account.refreshAccount();
+    return account.accountState();
+  },
+  accountSignUp: (m) => account.signUp(m),
+  accountSignIn: (m) => account.signIn(m),
+  accountSignOut: () => account.signOut(),
+  accountReset: (m) => account.resetPassword(m),
+  billingCheckout: (m) => account.checkout(m),
+  billingPortal: () => account.openPortal(),
   hasWord: async ({ word }) => (await getWords()).some((w) => wordKey(w.w) === wordKey(word)),
   getSettings: () => getSettings(),
   saveSettings: ({ patch }) => saveSettings(patch),

@@ -25,7 +25,7 @@
 - **Manifest V3。** 后台是 Service Worker，空闲约 30 秒后会被浏览器终止，不能依赖常驻内存
 - **内容脚本运行在隔离世界（isolated world）。** 能操作 DOM，但看不到网页自己的 JavaScript 变量，也拦截不到网页发出的请求
 - **网页环境不可控。** 任意 CSS、任意 DOM 结构、内容动态加载、严格的 CSP
-- **用户自带 Key。** 扩展没有服务器，所有请求从用户浏览器直接发往服务商
+- **用户自带 Key。** 翻译请求从用户浏览器直接发往翻译服务商，不经过我们的后端；后端（Supabase）只负责账户与订阅
 
 这些约束直接决定了下面的分层。
 
@@ -268,6 +268,37 @@ iframe 中的面板是扩展源（`chrome-extension://`）页面，可以直接�
 
 **状态同步** 不靠互相调用，而是靠两条广播：设置与生词写入 `chrome.storage.local`，所有面板监听 `onChanged` 刷新；整页翻译开关由内容脚本广播 `pageStateChanged`。因此无论从悬浮球、快捷键、弹窗还是抽屉操作，各处显示始终一致。
 
+### 3.9 后端：账户与订阅
+
+翻译本身不需要后端，账户和付费订阅需要。后端只用两家托管服务，没有自建服务器：
+
+| 职责 | 服务 | 位置 |
+| --- | --- | --- |
+| 注册、登录、令牌 | Supabase Auth | 托管 |
+| 会员状态 | Supabase 数据库：`profiles`、`subscriptions`、`stripe_events` | `supabase/migrations/` |
+| 创建支付页、客户门户、接收通知 | Supabase Edge Functions（Deno） | `supabase/functions/` |
+| 收款与订阅周期 | Stripe Checkout、客户门户、webhook | 托管 |
+
+```
+面板账户页 ──runtime.sendMessage──▶ background/account.js
+                                      ├ /auth/v1/*           注册、登录、刷新令牌、重置密码
+                                      ├ /rest/v1/profiles    读取自己的会员状态（RLS）
+                                      └ /functions/v1/billing-checkout | billing-portal
+                                                 │ 返回 Stripe 页面地址 → 新标签页打开
+Stripe ──webhook──▶ stripe-webhook ──验证签名──▶ handleEvent ──▶ subscriptions、profiles
+支付返回页 billing-return ──tabs.onUpdated──▶ account.js 刷新会员状态 → storage → 面板
+```
+
+**三个关键决策：**
+
+- **扩展不引入 Supabase SDK，直接调用 REST 接口。** 项目没有构建步骤，SDK 需要打包；而扩展只用到注册、登录、刷新、读一张表、调两个函数，用 `fetch` 写一百多行就够了。会话保存在 `chrome.storage.local`，令牌在过期前 60 秒自动刷新，多个请求同时刷新时共用同一次刷新
+- **会员状态只由服务端写入。** `profiles` 表只给登录用户开放“读自己”的 RLS 策略，没有 update 策略；套餐字段只有 webhook 用 service role 写入。用户即使拿到自己的令牌，也无法把自己改成 Pro
+- **订阅逻辑与外部依赖分离。** `_shared/billing.ts` 只依赖注入的 `BillingDeps` 接口，不直接引用 Stripe SDK 和数据库客户端，因此能在单元测试中用内存数据库验证全部状态转换
+
+**订阅状态到套餐的映射：** `active`、`trialing` 为 Pro；`past_due`（续费扣款失败）保留 Pro 作为宽限期，界面提示更新支付方式；其余状态（`canceled`、`unpaid`、`incomplete` 等）为免费版。用户设置“到期取消”时，`cancel_at_period_end` 为真，到期前仍是 Pro。
+
+**可靠性：** Stripe 可能重复或乱序投递事件。每个事件 ID 先写入 `stripe_events`，主键冲突即视为已处理；同步时总是以订阅对象的当前状态为准（`checkout.session.completed` 会重新获取订阅），而不是累加变化，因此乱序也能得到正确结果。处理失败返回 500，让 Stripe 稍后重试。
+
 ---
 
 ## 四、数据流
@@ -324,6 +355,8 @@ settings
 
 **生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳, m: 是否已掌握 }`，按小写去重，上限 5000 条。“本页生词”由面板把整个生词表发给内容脚本，内容脚本对 `document.body.innerText` 分词后取交集，不额外存储。
 
+**账户**（`chrome.storage.local`）：`auth` 保存会话 `{ access_token, refresh_token, expires_at, user }`；`account` 保存界面显示用的会员状态 `{ email, plan, status, periodEnd, cancelAtPeriodEnd, hasBilling }`，只是缓存，以数据库为准。
+
 **缓存**（IndexedDB `glimmer-cache` / 对象仓库 `tr`）：键为缓存键字符串，值为 `{ v: 译文, t: 写入时间 }`。
 
 ---
@@ -344,6 +377,8 @@ settings
 | 设置同步 | `storage.local` | `storage.sync` | `sync` 单项限 8KB，且 API Key 不应同步到云端 |
 | 大模型批量 | JSON 数组协议 + 降级 | 分隔符拼接 | 分隔符可能被模型改写或翻译；JSON 可校验数量 |
 | 面板实现 | 同一扩展页面兼作弹窗与 iframe 抽屉 | 内容脚本中再实现一套 UI | 一套代码；可直接用扩展 API 和共享模块；与网页隔离 |
+| 后端 | Supabase（Auth + 数据库 + Edge Functions）+ Stripe | 自建 Node 服务器 | 账户、数据库、函数一站托管，免运维；Stripe 负责合规收款 |
+| 扩展连接后端 | 直接调用 REST 接口 | 打包 Supabase SDK | 不引入构建步骤；所需接口很少 |
 | Microsoft 引擎 | Azure 官方 API | Edge 免费鉴权接口 | 后者已下线（返回 404），且属非官方用法 |
 
 ---
@@ -366,7 +401,9 @@ settings
 
 - **Key 隔离。** API Key 只存在扩展存储中，只在 Service Worker 里读取。内容脚本和网页都拿不到；网页即使被 XSS，也无法通过扩展窃取 Key
 - **不同步。** 使用 `storage.local` 而非 `storage.sync`，Key 不会上传到 Google 账户
-- **无自有服务器。** 网页文本只发往用户选择的服务商，扩展不收集任何数据
+- **翻译内容不经过我们的后端。** 网页文本只发往用户选择的翻译服务商；后端只保存账户邮箱和订阅状态
+- **支付信息不经过我们。** 银行卡在 Stripe 的页面上填写，扩展和后端都接触不到；webhook 用 Stripe 签名验证，伪造的通知会被拒绝
+- **密钥分级。** 扩展里只有可公开的 Supabase anon key；service_role key、Stripe 密钥只存在 Supabase 的函数环境变量中
 - **主世界最小化。** `yt-hook.js` 只转发字幕数据，不读取设置、不调用扩展 API；内容脚本接收消息时校验 `event.source === window` 和 `source` 标识
 - **面板隔离。** 抽屉是扩展源的 iframe，网页读不到其中内容；面板发出的 `postMessage` 只有“关闭”一种，内容脚本校验来源必须是本扩展。代价是 `panel/*` 等资源对网页可见，网站可借此探测扩展是否安装
 - **输出转义。** 划词面板、字幕中的文本全部经过 HTML 转义或使用 `textContent` 写入，译文中的恶意内容不会被当作 HTML 执行
