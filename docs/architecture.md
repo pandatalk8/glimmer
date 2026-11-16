@@ -7,6 +7,8 @@
 本文记录微光翻译的整体架构、每个关键决策的理由和被放弃的方案。读完你应该能回答：某个功能为什么放在这一层，改动它会影响谁。
 
 > 本文讲“为什么这样设计”。具体怎么改代码、怎么调试，见 [开发指南](development.md)。
+>
+> 文中的图用 Mermaid 绘制，在 GitHub 上直接显示为图形；本地查看需要支持 Mermaid 的编辑器（如 VS Code 安装 “Markdown Preview Mermaid Support”）。修改图之后运行 `python3 tests/check_diagrams.py` 检查能否正常渲染。
 
 ---
 
@@ -38,33 +40,41 @@
 
 ## 二、整体架构
 
-```
-┌──────────────────────────────── 浏览器标签页 ────────────────────────────────┐
-│ 网页主世界 (MAIN)            内容脚本隔离世界 (isolated)                        │
-│ ┌────────────────┐ postMessage ┌──────────────────────────────────────────┐ │
-│ │ yt-hook.js     │ ──────────▶ │ youtube.js  字幕解析 / 渲染                  │ │
-│ │ 拦截字幕请求    │  字幕数据    │ content.js  扫描 → 调度 → 渲染；悬浮球、划词、  │ │
-│ └────────────────┘             │             悬停、输入框、本页生词、开关抽屉    │ │
-│                                └───────┬──────────────────────────┬───────┘ │
-│ 网页 DOM ◀── <gl-trans> 译文 ───────────┘                          │         │
-│ <glimmer-ui> Shadow DOM：悬浮球、划词面板、Toast                     │         │
-│    └ .drawer ─ <iframe panel.html?mode=drawer>  侧边面板（扩展源页面）│         │
-└───────────────────────────────┬─────────────────────────────────────┼───────┘
-                                │ runtime.sendMessage                  │
-┌──────────────────────────── 扩展进程 ─────────────────────────────────▼───────┐
-│  工具栏图标 ─▶ onActionClick（必要时注入内容脚本；内置页面退回弹窗）            │
-│  ┌────────────────┐ ┌────────────┐   ┌──────────────────────────────────────┐ │
-│  │ panel/ 面板     │ │ options/   │──▶│ background/index.js（Service Worker）  │ │
-│  │ 首页·设置·生词·账户│ │ 完整设置页 │   │  消息路由 → 去重 → 缓存 → 引擎适配器    │ │
-│  └───────┬────────┘ └─────┬──────┘   │  account.js：会话、会员状态、支付跳转   │ │
-│          └── chrome.storage.local ◀──┴────────┬──────────────┬─────────────┘ │
-│              设置 · 生词 · 会话 · 会员缓存      │ IndexedDB 缓存│              │
-└────────────────────────────────────────────────┼──────────────┼──────────────┘
-                                 翻译请求（fetch）│              │ 账户、支付请求（fetch）
-                  ┌──────────────────────────────┘              ▼
-                  ▼                                Supabase：Auth · 数据库（RLS）· Edge Functions
-   翻译服务商：Google · Azure · DeepL · OpenAI              ▲                   │ 创建支付页 / 门户
-   Gemini · DeepSeek · Claude · 自定义                       └── webhook ── Stripe ◀┘
+```mermaid
+flowchart TB
+  subgraph TAB["浏览器标签页"]
+    HOOK["yt-hook.js<br/>主世界：拦截字幕请求"]
+    CS["content.js · youtube.js<br/>隔离世界：扫描 · 调度 · 渲染"]
+    UI["网页内界面（Shadow DOM）<br/>译文 · 悬浮球 · 划词面板"]
+    DRAWER["侧边面板<br/>iframe：panel.html"]
+    HOOK --> CS
+    CS --> UI
+    CS --> DRAWER
+  end
+
+  subgraph BG["扩展后台"]
+    PAGES["工具栏弹窗 · 完整设置页"]
+    ROUTER["index.js<br/>消息路由 · 工具栏点击"]
+    CACHE["cache.js<br/>去重 · IndexedDB 缓存"]
+    ENG["engines/<br/>翻译引擎适配"]
+    ACC["account.js<br/>会话 · 会员状态"]
+    STORE[("storage.local<br/>设置 · 生词 · 会话")]
+    PAGES --> ROUTER
+    ROUTER --> CACHE --> ENG
+    ROUTER --> ACC --> STORE
+  end
+
+  subgraph CLOUD["外部服务"]
+    MT["翻译服务商<br/>Google · DeepL · GPT 等"]
+    SUPA["Supabase<br/>Auth · 数据库 · Edge Functions"]
+    STRIPE["Stripe<br/>支付 · 订阅"]
+    SUPA <-- "支付页 / webhook" --> STRIPE
+  end
+
+  CS -- "消息" --> ROUTER
+  DRAWER -- "消息" --> ROUTER
+  ENG -- "翻译请求" --> MT
+  ACC -- "账户请求" --> SUPA
 ```
 
 整个系统分六层，每层只做一件事：
@@ -77,6 +87,25 @@
 | 账户层 | `src/background/account.js` | 会话保存与续期、读取会员状态、打开支付页 | 不决定会员状态，只读取 |
 | 界面与配置层 | `src/shared/*`、`panel/`、`options/` | 设置的定义与读写、面板与设置页界面 | 不参与翻译流程 |
 | 后端 | `supabase/` | 账户、会员数据、Stripe 支付与通知 | 不经手翻译内容 |
+
+```mermaid
+flowchart TB
+  UI["界面与配置层<br/>panel/ · options/ · src/shared/"]
+  PAGE["页面层<br/>src/content/*"]
+  SVC["服务层<br/>background/index.js · cache.js"]
+  ADP["适配层<br/>background/engines/*"]
+  ACCT["账户层<br/>background/account.js"]
+  BE["后端<br/>supabase/"]
+  EXT1["翻译服务商"]
+  EXT2["Stripe"]
+  UI -- "消息" --> SVC
+  PAGE -- "消息" --> SVC
+  SVC --> ADP
+  SVC --> ACCT
+  ADP --> EXT1
+  ACCT --> BE
+  BE <--> EXT2
+```
 
 ---
 
@@ -109,17 +138,14 @@
 
 ### 3.2 调度器：什么时候翻
 
-```
-扫描得到单元 ──▶ IntersectionObserver（上下预加载 600px）
-                       │ 进入视口
-                       ▼
-                 插入占位（转圈）──▶ 待发队列
-                                      │ 80ms 内的单元合并
-                                      ▼
-                         切批：≤ 40 段 且 ≤ 5000 字符
-                                      │
-                                      ▼
-                              sendMessage('translate')
+```mermaid
+flowchart TB
+  A["扫描得到翻译单元"] --> B["IntersectionObserver<br/>上下预加载 600px"]
+  B -- "进入视口" --> C["插入加载圈"]
+  C --> D["待发队列<br/>80ms 内合并"]
+  D --> E["切批<br/>不超过 40 段且 5000 字符"]
+  E --> F["sendMessage：translate"]
+  G["MutationObserver<br/>400ms 防抖"] -- "只扫描新增子树" --> A
 ```
 
 **为什么懒加载？** 一篇维基百科长文有几百段，用户通常只读前几屏。按视口翻译让首屏更快出结果，也让大模型的花费下降一个数量级。
@@ -167,12 +193,12 @@ YouTube 字幕层单独挂在播放器元素 `#movie_player` 内部，而不是�
 
 后台的 `translate` 处理流程：
 
-```
-texts[] ──▶ 计算缓存键 ──▶ IndexedDB 批量读取
-                              │
-                 命中 ◀───────┴───────▶ 未命中 ──▶ Set 去重 ──▶ 引擎适配器
-                  │                                              │
-                  └──────────── 按原顺序合并 ◀── 写回缓存 ◀──────┘
+```mermaid
+flowchart TB
+  A["texts[]"] --> B["计算缓存键"] --> C[("IndexedDB<br/>批量读取")]
+  C -- "命中" --> G["按原顺序合并"]
+  C -- "未命中" --> D["Set 去重"] --> E["引擎适配器"] --> F["写回缓存<br/>不等待完成"] --> G
+  G --> H["string[]"]
 ```
 
 **缓存键** 为 `引擎 + 模型 + 源语言 + 目标语言 + 原文`。加入模型是因为同一引擎换模型后译文质量不同，不应混用；没有加入提示词，是权衡后的取舍——提示词改动频率低，加入后每次微调都会让缓存全部失效。
@@ -232,18 +258,19 @@ user:   Translate each string in the JSON array below into Simplified Chinese.
 
 解决方案是 **在主世界放一个只做拦截的最小脚本**：
 
-```
-yt-hook.js (MAIN, document_start)          youtube.js (isolated)
-  包装 fetch / XMLHttpRequest.open
-  URL 含 /api/timedtext ──clone 响应──▶ postMessage ──▶ 校验 source
-                                                       │
-                                     json3 / XML 解析 ◀┘
-                                           │
-                       自动字幕：按停顿 >1.5s、句末标点、>90 字符合并成句
-                                           │
-                       从当前播放位置开始，每 40 句一批翻译
-                                           │
-                       requestAnimationFrame 循环 + 二分查找当前字幕
+```mermaid
+flowchart TB
+  subgraph MAINW["网页主世界 · yt-hook.js（document_start 注入）"]
+    H["包装 fetch / XMLHttpRequest"] --> M{"URL 含 /api/timedtext？"}
+  end
+  subgraph ISO["隔离世界 · youtube.js"]
+    P["校验来源<br/>json3 / XML 解析"] --> Q["自动字幕合并成句<br/>停顿超过 1.5 秒、句末标点、超过 90 字符"]
+    Q --> R["从当前播放位置开始<br/>每 40 句一批翻译"]
+    R --> S["requestAnimationFrame 循环<br/>二分查找当前字幕"]
+    S --> T["播放器内字幕层<br/>原文行 + 译文行"]
+  end
+  M -- "是：克隆响应，postMessage" --> P
+  M -- "否" --> X["放行，不处理"]
 ```
 
 主世界脚本刻意保持极简：不读设置、不调用扩展 API、只转发数据。主世界里的代码对网页完全可见，越少越安全。
@@ -259,19 +286,19 @@ yt-hook.js (MAIN, document_start)          youtube.js (isolated)
 | 两套实现 | 弹窗写一套，内容脚本在 Shadow DOM 里再写一套 | 代码重复；内容脚本不能 `import` 共享模块，设置逻辑要再抄一遍 |
 | **一个扩展页面（采用）** | `panel/panel.html` 既作弹窗，又以 iframe 嵌入网页 | 需要把面板资源声明为 `web_accessible_resources` |
 
-```
-工具栏图标 ──▶ background.onActionClick
-                 ├ ping 内容脚本，不在则 chrome.scripting 注入
-                 ├ 成功 ──▶ tabs.sendMessage(toggleDrawer) ─┐
-                 └ 失败 ──▶ setPopup + openPopup ──▶ panel.html（弹窗）
-悬浮球“面板” ───────────────────────────────────────────────┤
-                                                            ▼
-               <glimmer-ui> Shadow DOM
-                 └ .drawer
-                    └ <iframe src="panel.html?mode=drawer">
-                         │ runtime.sendMessage(tabInfo) → sender.tab
-                         │ tabs.sendMessage(tab, setPage / getState)
-                         └ parent.postMessage(close) ──▶ 内容脚本校验 origin 后收起
+```mermaid
+flowchart TD
+  A["点击工具栏图标 / Alt+Q"] --> B{"内容脚本在吗？<br/>发送 ping"}
+  B -- "在" --> D["tabs.sendMessage：toggleDrawer"]
+  B -- "不在" --> C{"chrome.scripting<br/>能注入吗？"}
+  C -- "能：安装前已打开的网页" --> D
+  C -- "不能：chrome:// 等内置页面" --> E["setPopup + openPopup<br/>以弹窗形态打开 panel.html"]
+  F["悬浮球菜单：面板"] --> G
+  D --> G["content.js 在 Shadow DOM 中<br/>创建 .drawer 并滑入"]
+  G --> H["iframe：panel.html?mode=drawer"]
+  H -- "tabInfo" --> I["后台返回 sender.tab<br/>面板知道自己在哪个网页"]
+  H -- "setPage / getState / pageWords" --> J["content.js"]
+  H -- "postMessage：close" --> K["content.js 校验 origin 后收起"]
 ```
 
 为什么悬浮球、划词面板用 Shadow DOM，侧边面板却用 iframe？前两者很小、要紧贴选区定位、只需展示几行文字，Shadow DOM 足够轻；侧边面板是一个完整应用，要读写设置、生词、登录令牌，用扩展页面才能直接使用扩展 API 和共享模块，也能把令牌留在扩展源内，网页读不到。
@@ -291,33 +318,48 @@ iframe 中的面板是扩展源（`chrome-extension://`）页面，可以直接�
 | 创建支付页、客户门户、接收通知 | Supabase Edge Functions（Deno） | `supabase/functions/` |
 | 收款与订阅周期 | Stripe Checkout、客户门户、webhook | 托管 |
 
-```
-面板账户页 ──runtime.sendMessage──▶ background/account.js
-                                      ├ /auth/v1/*           注册、登录、刷新令牌、重置密码
-                                      ├ /rest/v1/profiles    读取自己的会员状态（RLS）
-                                      └ /functions/v1/billing-checkout | billing-portal
-                                                 │ 返回 Stripe 页面地址 → 新标签页打开
-Stripe ──webhook──▶ stripe-webhook ──验证签名──▶ handleEvent ──▶ subscriptions、profiles
-支付返回页 billing-return ──tabs.onUpdated──▶ account.js 刷新会员状态 → storage → 面板
+```mermaid
+flowchart TB
+  P["面板账户页"] -- "runtime.sendMessage" --> A["background/account.js"]
+  A -- "/auth/v1/*<br/>注册 · 登录 · 刷新令牌 · 重置密码" --> AUTH["Supabase Auth"]
+  A -- "/rest/v1/profiles<br/>读取自己的会员状态" --> DB[("Postgres<br/>RLS")]
+  A -- "/functions/v1/billing-checkout<br/>/functions/v1/billing-portal" --> FN["Edge Functions"]
+  FN -- "创建支付页 / 客户门户" --> ST["Stripe"]
+  ST -- "webhook（签名）" --> WH["stripe-webhook<br/>handleEvent"]
+  WH -- "写 subscriptions · profiles" --> DB
+  RET["billing-return 返回页"] -. "tabs.onUpdated" .-> A
 ```
 
 **一次订阅的完整过程：**
 
-```
-面板          account.js           Supabase                     Stripe
- │ 登录          │                    │                            │
- │─────────────▶│──/auth/v1/token────▶│                            │
- │              │◀──会话（令牌）──────│                            │
- │              │──/rest/v1/profiles─▶│ RLS：只返回自己             │
- │ 月付 / 年付    │                    │                            │
- │─────────────▶│──billing-checkout──▶│ 建 customer、Checkout ────▶│
- │              │◀──支付页地址────────│◀───────────────────────────│
- │              │ 新标签页打开 ─────────────────────────────────────▶│ 用户付款
- │              │                    │◀──webhook（签名）───────────│
- │              │                    │ 写 subscriptions、plan=pro  │
- │              │◀─tabs.onUpdated：billing-return 页面打开            │
- │              │──/rest/v1/profiles─▶│                            │
- │◀─storage──────│ account.plan = pro │                            │
+```mermaid
+sequenceDiagram
+  actor U as 用户
+  participant P as 面板（账户页）
+  participant A as account.js
+  participant S as Supabase
+  participant T as Stripe
+  U->>P: 输入邮箱和密码，登录
+  P->>A: accountSignIn
+  A->>S: POST /auth/v1/token
+  S-->>A: 会话（访问令牌 + 刷新令牌）
+  A->>S: GET /rest/v1/profiles（RLS 只返回自己）
+  S-->>A: plan = free
+  U->>P: 点击“月付”
+  P->>A: billingCheckout
+  A->>S: POST /functions/v1/billing-checkout
+  S->>T: 创建 customer 与 Checkout Session
+  T-->>S: 支付页地址
+  S-->>A: url
+  A->>U: 新标签页打开 Stripe 支付页
+  U->>T: 填写银行卡并付款
+  T->>S: webhook（带签名）
+  S->>S: 验证签名、去重，写入 subscriptions 与 profiles（plan = pro）
+  T->>U: 跳转到 billing-return 返回页
+  A->>A: tabs.onUpdated 检测到返回页
+  A->>S: GET /rest/v1/profiles
+  S-->>A: plan = pro
+  A->>P: 写入 storage，面板显示 Pro
 ```
 
 支付返回页打开时，webhook 可能还没到达，所以 `account.js` 在返回页打开后的第 0、2、7、17 秒各刷新一次，拿到 Pro 即停止。
@@ -338,34 +380,49 @@ Stripe ──webhook──▶ stripe-webhook ──验证签名──▶ handleE
 
 ### 4.1 整页翻译时序
 
-```
-用户       悬浮球/快捷键     content.js        background         引擎
- │  点击/Alt+A  │               │                  │                │
- │─────────────▶│  togglePage   │                  │                │
- │              │──────────────▶│ scan(body)       │                │
- │              │               │ observe 单元      │                │
- │  滚动        │               │ 进入视口→占位     │                │
- │─────────────────────────────▶│ 80ms 合并         │                │
- │              │               │──translate──────▶│ 查缓存/去重     │
- │              │               │                  │──fetch────────▶│
- │              │               │                  │◀───────────────│
- │              │               │◀──string[]───────│ 写缓存          │
- │              │               │ 校验 gen，填充译文 │                │
+```mermaid
+sequenceDiagram
+  actor U as 用户
+  participant B as 悬浮球 / 快捷键
+  participant C as content.js
+  participant W as Service Worker
+  participant E as 翻译服务商
+  U->>B: 点击 / Alt+A
+  B->>C: togglePage
+  C->>C: scan(body)，单元交给 IntersectionObserver
+  U->>C: 滚动
+  C->>C: 进入视口：插入加载圈，80ms 合并
+  C->>W: translate（每批不超过 40 段 / 5000 字符）
+  W->>W: 查缓存、去重
+  W->>E: fetch（按引擎批量，带超时）
+  E-->>W: 译文
+  W->>W: 写缓存
+  W-->>C: string[]
+  C->>C: 校验 gen，填充译文
 ```
 
 ### 4.2 设置变更传播
 
 `chrome.storage.local` 是设置的**唯一事实来源**。任何界面都不互相通知，只写存储：
 
-```
-面板 / options / 悬浮球菜单 / 划词面板
-        │ saveSettings(patch)：读取 → 深合并 → 写回
-        ▼
-chrome.storage.local ──onChanged──▶ 所有标签页的 content.js
-                                       │ 向后台拉取合并默认值后的设置
-                                       ├ 样式/模式变化 → 改 <html> 属性
-                                       ├ 悬浮球开关 → 显示/移除
-                                       └ 引擎/语言变化 → 重新翻译当前页
+```mermaid
+flowchart LR
+  subgraph WRITERS["写入方"]
+    W1["面板"]
+    W2["完整设置页"]
+    W3["悬浮球菜单"]
+    W4["划词面板：收藏"]
+    W5["account.js：登录 / 支付后"]
+  end
+  S[("chrome.storage.local<br/>settings · words · auth · account")]
+  W1 --> S
+  W2 --> S
+  W3 --> S
+  W4 --> S
+  W5 --> S
+  S -- "onChanged：settings" --> C["各标签页 content.js<br/>向后台取合并默认值后的设置<br/>改样式 · 悬浮球 · 重新翻译"]
+  S -- "onChanged：words" --> D["已打开的面板<br/>重算本页生词"]
+  S -- "onChanged：auth · account" --> E["已打开的面板<br/>刷新账户行与 Pro 标识"]
 ```
 
 同样的机制也用于生词和账户：`words` 变化时，所有打开的面板重新计算“本页生词”；`auth`、`account` 变化时（登录、退出、支付后刷新），面板重新读取会员状态并更新账户行与 Pro 标识。
@@ -395,6 +452,39 @@ settings
 **缓存**（IndexedDB `glimmer-cache` / 对象仓库 `tr`）：键为缓存键字符串，值为 `{ v: 译文, t: 写入时间 }`。
 
 **后端数据库**（Supabase Postgres，`supabase/migrations/`）：
+
+```mermaid
+erDiagram
+  AUTH_USERS ||--|| PROFILES : "注册时自动创建"
+  AUTH_USERS ||--o{ SUBSCRIPTIONS : "拥有"
+  AUTH_USERS {
+    uuid id PK
+    text email
+  }
+  PROFILES {
+    uuid id PK "等于用户 ID"
+    text email
+    text plan "free 或 pro"
+    text stripe_customer_id UK
+    text subscription_status
+    timestamptz current_period_end
+    boolean cancel_at_period_end
+  }
+  SUBSCRIPTIONS {
+    text id PK "Stripe 订阅 ID"
+    uuid user_id FK
+    text status
+    text price_id
+    text billing_interval
+    timestamptz current_period_end
+    boolean cancel_at_period_end
+  }
+  STRIPE_EVENTS {
+    text id PK "Stripe 事件 ID，去重"
+    text type
+    timestamptz received_at
+  }
+```
 
 | 表 | 主要字段 | 谁能读 | 谁能写 |
 | --- | --- | --- | --- |

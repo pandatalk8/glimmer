@@ -20,6 +20,7 @@ python3 tests/e2e_real.py     # 真实网站与交互，46 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），22 项
 deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅逻辑，9 项
 python3 tests/e2e_engines.py  # 用 tests/.env.local 中的 Key 测试引擎
+python3 tests/check_diagrams.py  # 文档中的 Mermaid 图能否正常渲染
 ```
 
 改动后至少运行前两项测试，全部通过再提交；涉及账户、订阅或 `supabase/` 时再运行账户测试和后端单元测试。
@@ -31,5 +32,7 @@ python3 tests/e2e_engines.py  # 用 tests/.env.local 中的 Key 测试引擎
 ## 文档
 
 架构、开发、配置、测试说明在 `docs/` 中；改动功能时同步更新相关文档。
+
+架构图、时序图、数据表关系图用 Mermaid 写在 `docs/architecture.md` 中；架构变化时同步修改图，并运行 `tests/check_diagrams.py` 检查。
 
 界面各区域的统一叫法见 `docs/ui-terms.md`（如“图标栏”“翻译开关卡片”“划词面板”），理解指令和汇报时都用这些名称；新增或改名界面元素时同步更新术语表。中文文档使用全角引号“”‘’，代码块除外。

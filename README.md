@@ -98,17 +98,16 @@ python3 tests/e2e.py
 
 ## 工作原理
 
+```mermaid
+flowchart TB
+  A["网页 DOM"] -- "扫描" --> B["翻译单元<br/>块级元素内连续的 inline 文本"]
+  B -- "IntersectionObserver：进入视口才翻译" --> C["批量队列<br/>80ms 合并，每批不超过 40 段 / 5000 字符"]
+  C -- "chrome.runtime.sendMessage" --> D["Service Worker<br/>去重 → IndexedDB 缓存 → 翻译引擎"]
+  D -- "译文" --> E["插入 gl-trans 译文"]
+  E --> A
 ```
-网页 DOM ──扫描──▶ 翻译单元（块级元素内连续的 inline 文本）
-   │                    │ IntersectionObserver：进入视口才翻译
-   │                    ▼
-   │             批量队列（80ms 合并，≤40 段 / 5000 字符）
-   │                    │ chrome.runtime.sendMessage
-   │                    ▼
-   │          Service Worker：去重 → IndexedDB 缓存 → 引擎
-   │                    │
-   └──── <gl-trans> 插入译文 ◀──┘
-```
+
+完整的架构图、时序图和数据表关系图见 [架构设计说明](docs/architecture.md)。
 
 - 跳过 `code`、`pre`、输入框、`translate="no"`、`.notranslate` 和已经是目标语言的文本
 - “仅译文”模式通过 `font-size:0` 隐藏原文文本节点，不移动、不删除网页原有节点，对 React/Vue 页面更安全
