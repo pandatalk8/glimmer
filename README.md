@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [更新日志](CHANGELOG.md) | 每个版本的功能更新、修复与修改记录 |
+| [本地运行指南](docs/local-dev.md) | 本机运行扩展、跑测试、用本地 Supabase 与 Stripe 测试模式跑通注册和付款 |
 | [后端部署指南](docs/backend.md) | Supabase 账户与 Stripe 订阅的配置、部署、联调 |
 | [界面术语表](docs/ui-terms.md) | 面板、悬浮球、划词面板等每个界面区域的统一叫法，提修改意见时使用 |
 | [架构设计说明](docs/architecture.md) | 分层架构、核心模块设计、数据流、关键决策与取舍、性能、安全、演进方向 |

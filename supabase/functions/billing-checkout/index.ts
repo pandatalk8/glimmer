@@ -1,6 +1,6 @@
 // 创建 Stripe Checkout 订阅支付页，返回跳转地址
 // POST { interval: 'month' | 'year' }，需要登录（Authorization: Bearer <access_token>）
-import { corsHeaders, env, json } from '../_shared/http.ts';
+import { corsHeaders, env, json, publicUrl } from '../_shared/http.ts';
 import { adminClient, stripeClient, userFromRequest } from '../_shared/clients.ts';
 
 Deno.serve(async (req) => {
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
       if (e2) throw e2;
     }
 
-    const returnUrl = `${env('SUPABASE_URL')}/functions/v1/billing-return`;
+    const returnUrl = `${publicUrl()}/functions/v1/billing-return`;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer,

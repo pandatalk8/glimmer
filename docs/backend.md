@@ -3,6 +3,8 @@
 账户和订阅功能需要一个后端。整套后端只用两家服务：**Supabase** 负责注册登录和数据库，**Stripe** 负责收款。代码都在仓库的 `supabase/` 目录，照着下面的步骤做一遍，大约 30 分钟。
 
 > 先用 Stripe 的**测试模式**跑通，确认无误后再切换到正式模式。测试模式不会产生真实扣款。
+>
+> 想先在本机完整跑一遍（本地 Supabase + Stripe 测试模式），见 [本地运行指南](local-dev.md)。
 
 ---
 
@@ -100,7 +102,7 @@ npx supabase secrets set \
   STRIPE_PRICE_YEARLY=price_xxx
 ```
 
-`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由平台自动注入，不需要手动设置。
+`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由平台自动注入，不需要手动设置。可选的 `PUBLIC_SUPABASE_URL` 用于拼接支付返回页地址，云端不需要设置，只在本地运行时需要（见本地运行指南）。
 
 **第二步，部署 4 个函数。**
 

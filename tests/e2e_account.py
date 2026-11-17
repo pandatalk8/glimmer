@@ -76,6 +76,9 @@ class Mock(http.server.BaseHTTPRequestHandler):
         DB.calls.append(('POST', u.path + ('?' + u.query if u.query else '')))
         if self.headers.get('apikey') != ANON:
             return self.send(401, {'message': 'No API key found in request'})
+        # 新版 publishable key 不是 JWT，放进 Authorization 会被 Supabase 拒绝
+        if self.headers.get('Authorization') == 'Bearer ' + ANON:
+            return self.send(401, {'message': 'Invalid JWT: publishable key used as Authorization'})
         if u.path == '/auth/v1/signup':
             email = body['email']
             if email in DB.users:

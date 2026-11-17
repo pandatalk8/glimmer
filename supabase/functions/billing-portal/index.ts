@@ -1,6 +1,6 @@
 // 打开 Stripe 客户门户：修改方案、更换支付方式、取消订阅、查看发票
 // POST，需要登录
-import { corsHeaders, env, json } from '../_shared/http.ts';
+import { corsHeaders, json, publicUrl } from '../_shared/http.ts';
 import { adminClient, stripeClient, userFromRequest } from '../_shared/clients.ts';
 
 Deno.serve(async (req) => {
@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
 
     const session = await stripeClient().billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: `${env('SUPABASE_URL')}/functions/v1/billing-return?status=portal`,
+      return_url: `${publicUrl()}/functions/v1/billing-return?status=portal`,
     });
     return json({ url: session.url });
   } catch (e) {

@@ -52,7 +52,8 @@ async function call(path, { method = 'GET', body, token, headers = {} } = {}) {
       headers: {
         apikey: key,
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + (token || key),
+        // 只在登录后携带用户令牌；新版 publishable key（sb_publishable_…）不是 JWT，不能放进 Authorization
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,
