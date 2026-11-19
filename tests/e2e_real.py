@@ -228,13 +228,21 @@ async def main():
             await pp.locator('[data-pick=engine]').click()
             await pp.wait_for_timeout(200)
             await pp.screenshot(path=f'{OUTPUT}/panel-engines.png')
+            tags = await pp.locator('.opt .tag').all_inner_texts()
+            check('引擎选项标注会员等级', 'Premium' in tags and 'Premium+' in tags, tags)
             await pp.locator('[data-set=deepl]').click()
-            await pp.wait_for_timeout(200)
-            t = await pp.locator('#toast').inner_text()
-            check('选择未配置引擎时提示需要 API Key', '需要先配置 API Key' in t, t)
-            await pp.locator('[data-set=google]').click()
-            await pp.wait_for_timeout(200)
-            await pp.close()
+            prem = None
+            for _ in range(25):
+                prem = next((x for x in ctx.pages if 'premium/premium.html' in x.url), None)
+                if prem:
+                    break
+                await asyncio.sleep(0.2)
+            eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.engine)")
+            check('免费版选择 DeepL：不切换引擎，打开 Premium 方案页', prem is not None and eng == 'google', eng)
+            if prem:
+                await prem.close()
+            if not pp.is_closed():
+                await pp.close()
 
         # ---------- 网页内侧边面板（抽屉） ----------
         if run('drawer'):

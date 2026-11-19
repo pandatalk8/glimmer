@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>会员方案 · 微光翻译</title>
+    <link rel="stylesheet" href="../styles/theme.css" />
+    <link rel="stylesheet" href="premium.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><img src="../icons/icon48.png" alt="" /><span>微光翻译</span></div>
+      <div class="who" id="who"></div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>会员方案</h1>
+        <p>解锁 DeepL 专业翻译与顶级 AI 大模型，让每一次阅读外文都更轻松。</p>
+        <div class="period" id="period">
+          <button data-interval="month">月付方案</button>
+          <button data-interval="year">年付方案<span class="save">省 4%</span></button>
+        </div>
+      </section>
+
+      <div class="notice" id="notice" hidden></div>
+
+      <section class="plans" id="plans"></section>
+
+      <section class="compare">
+        <h2>详细功能</h2>
+        <div class="table-wrap"><table id="compare"></table></div>
+      </section>
+
+      <section class="faq">
+        <h2>常见问题</h2>
+        <details><summary>可以随时取消吗？</summary><p>可以。在面板的账户页点击“管理订阅”即可取消，会员会保留到当前付费周期结束，不会再扣费。</p></details>
+        <details><summary>支付安全吗？</summary><p>支付在 Stripe 的页面上完成，银行卡信息只由 Stripe 处理，微光翻译接触不到。</p></details>
+        <details><summary>Premium 和 Premium+ 有什么区别？</summary><p>Premium 提供无限生词本、云同步，以及 DeepL、Microsoft 专业翻译；Premium+ 在此基础上解锁 GPT、Gemini、DeepSeek、Claude 四家大模型，每月 2000 万 Token。</p></details>
+        <details><summary>AI 用量用完了怎么办？</summary><p>当月暂停大模型翻译，Google、DeepL、Microsoft 仍可正常使用，下月 1 日自动恢复。</p></details>
+        <details><summary>可以从 Premium 升级到 Premium+ 吗？</summary><p>可以。点击 Premium+ 卡片上的“升级”，在 Stripe 页面中切换方案，费用按剩余天数自动折算。</p></details>
+        <details><summary>需要自己的 API Key 吗？</summary><p>不需要。所有付费翻译引擎都由微光翻译服务器提供。</p></details>
+      </section>
+    </main>
+
+    <footer class="foot">© 微光翻译 · 价格以美元计，支付页显示的金额为准</footer>
+
+    <!-- 登录弹窗：复用面板的账户页 -->
+    <div class="modal" id="loginModal" hidden>
+      <div class="sheet">
+        <button class="x" id="closeLogin" title="关闭">✕</button>
+        <iframe id="loginFrame" title="登录"></iframe>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script type="module" src="premium.js"></script>
+  </body>
+</html>

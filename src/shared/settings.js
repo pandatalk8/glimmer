@@ -1,19 +1,23 @@
 // 设置的默认值与读写。所有页面（background / popup / options）共用。
+// tier：使用该引擎所需的会员等级。除 Google 外，所有引擎都由微光翻译后端调用，用户浏览器中不设置任何 API Key
 export const ENGINES = [
-  { id: 'google', name: 'Google 翻译', type: 'mt', free: true },
-  { id: 'microsoft', name: 'Microsoft 翻译', type: 'mt', needKey: true },
-  { id: 'deepl', name: 'DeepL', type: 'mt', needKey: true },
-  { id: 'openai', name: 'OpenAI GPT', type: 'llm', needKey: true },
-  { id: 'gemini', name: 'Google Gemini', type: 'llm', needKey: true },
-  { id: 'deepseek', name: 'DeepSeek', type: 'llm', needKey: true },
-  { id: 'claude', name: 'Anthropic Claude', type: 'llm', needKey: true },
-  { id: 'custom', name: '自定义 (OpenAI 兼容)', type: 'llm', needKey: false },
+  { id: 'google', name: 'Google 翻译', type: 'mt', tier: 'free' },
+  { id: 'deepl', name: 'DeepL', type: 'mt', tier: 'premium' },
+  { id: 'microsoft', name: 'Microsoft 翻译', type: 'mt', tier: 'premium' },
+  { id: 'openai', name: 'OpenAI GPT', type: 'llm', tier: 'premium_plus' },
+  { id: 'gemini', name: 'Google Gemini', type: 'llm', tier: 'premium_plus' },
+  { id: 'deepseek', name: 'DeepSeek', type: 'llm', tier: 'premium_plus' },
+  { id: 'claude', name: 'Anthropic Claude', type: 'llm', tier: 'premium_plus' },
 ];
 
-export const DEFAULT_PROMPT =
-  'You are a professional translator. Translate the text into {{to}} accurately and fluently, ' +
-  'preserving meaning, tone, terminology, numbers, URLs and proper nouns. ' +
-  'Output only the translation without any explanation.';
+// 会员等级
+export const PLAN_RANK = { free: 0, premium: 1, premium_plus: 2 };
+export const PLAN_NAME = { free: '免费版', premium: 'Premium', premium_plus: 'Premium+' };
+export const FREE_WORD_LIMIT = 100; // 免费版生词本上限
+export const canUse = (plan, engine) => {
+  const e = ENGINES.find((x) => x.id === engine);
+  return !!e && (PLAN_RANK[plan || 'free'] ?? 0) >= PLAN_RANK[e.tier];
+};
 
 export const DEFAULT_SETTINGS = {
   engine: 'google',
@@ -29,18 +33,10 @@ export const DEFAULT_SETTINGS = {
   youtube: { enabled: true },
   alwaysSites: [],
   neverSites: [],
-  llm: { prompt: DEFAULT_PROMPT, temperature: 0.3 },
-  engines: {
-    google: {},
-    microsoft: { apiKey: '', region: '' },
-    deepl: { apiKey: '', apiUrl: '' },
-    openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini' },
-    gemini: { apiKey: '', model: 'gemini-2.5-flash' },
-    deepseek: { apiKey: '', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
-    claude: { apiKey: '', model: 'claude-haiku-5-5' },
-    custom: { apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
-  },
 };
+
+// 旧版本保存在设置中的 API Key、模型、提示词：已不再支持，读取时丢弃，下次保存即从存储中清除
+const LEGACY_KEYS = ['engines', 'llm'];
 
 function isObj(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
@@ -57,7 +53,10 @@ export function deepMerge(base, over) {
 
 export async function getSettings() {
   const { settings } = await chrome.storage.local.get('settings');
-  return deepMerge(DEFAULT_SETTINGS, settings || {});
+  const out = deepMerge(DEFAULT_SETTINGS, settings || {});
+  for (const k of LEGACY_KEYS) delete out[k];
+  if (!ENGINES.some((e) => e.id === out.engine)) out.engine = 'google'; // 例如已移除的“自定义”引擎
+  return out;
 }
 
 export async function saveSettings(patch) {

@@ -2,7 +2,16 @@
 import Stripe from 'npm:stripe@17.7.0';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.49.4';
 import { env } from './http.ts';
-import type { BillingDeps, StripeSubscriptionLike } from './billing.ts';
+import { priceMap, type BillingDeps, type StripeSubscriptionLike } from './billing.ts';
+
+/** 三个价格 ID（Stripe 后台或 scripts/setup_stripe.py 创建） */
+export function prices() {
+  return {
+    premiumYearly: Deno.env.get('STRIPE_PRICE_PREMIUM_YEARLY') || '',
+    plusMonthly: Deno.env.get('STRIPE_PRICE_PLUS_MONTHLY') || '',
+    plusYearly: Deno.env.get('STRIPE_PRICE_PLUS_YEARLY') || '',
+  };
+}
 
 export function stripeClient() {
   return new Stripe(env('STRIPE_SECRET_KEY'), {
@@ -29,6 +38,7 @@ export async function userFromRequest(req: Request) {
 export function billingDeps(db: SupabaseClient, stripe: Stripe): BillingDeps {
   const now = () => new Date().toISOString();
   return {
+    planForPrice: priceMap(prices()),
     async recordEvent(id, type) {
       const { error } = await db.from('stripe_events').insert({ id, type });
       if (error?.code === '23505') return false; // 唯一键冲突：已处理过

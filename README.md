@@ -11,7 +11,7 @@
 | [后端部署指南](docs/backend.md) | Supabase 账户与 Stripe 订阅的配置、部署、联调 |
 | [界面术语表](docs/ui-terms.md) | 面板、悬浮球、划词面板等每个界面区域的统一叫法，提修改意见时使用 |
 | [架构设计说明](docs/architecture.md) | 分层架构、核心模块设计、数据流、关键决策与取舍、性能、安全、演进方向 |
-| [配置指南](docs/configuration.md) | 各引擎 API Key 获取方式、全部设置项说明、导入导出、快捷键 |
+| [配置指南](docs/configuration.md) | 引擎与会员等级、全部设置项说明、导入导出、快捷键 |
 | [测试指南](docs/testing.md) | 自动化测试命令、手动测试清单、问题排查 |
 | [开发指南](docs/development.md) | 架构、消息协议、整页翻译实现、新增引擎步骤、调试与发布 |
 | [常见问题](docs/faq.md) | 安装使用、引擎报错、YouTube 字幕、隐私 |
@@ -30,43 +30,24 @@
 | 悬停翻译 | 按住 `Alt` 指向任意段落，只翻译这一段，再按一次还原 |
 | 输入框翻译 | 在输入框末尾连按三次空格，把内容翻译成指定语言（默认英文，需在设置中开启） |
 | YouTube 双语字幕 | 打开 CC 后自动显示原文 + 译文；自动生成字幕会合并成整句；鼠标移上字幕暂停，点击单词查词 |
-| 账户与订阅 | 邮箱注册登录；Pro 会员月付 / 年付，Stripe 安全支付，可自助管理订阅（后端：Supabase + Stripe） |
+| 账户与会员 | 邮箱或 Google 注册登录；Premium（$29 / 年）与 Premium+（$6 / 月或 $69 / 年）两档会员，Premium 方案页选择订阅，Stripe 安全支付，可自助管理订阅（后端：Supabase + Stripe） |
+| 生词本云同步 | 会员的生词本自动同步到账号，换设备登录即可恢复；免费版最多 100 个 |
 | 网站规则 | 总是翻译 / 永不翻译的域名列表 |
 | 翻译缓存 | IndexedDB 缓存 30 天，相同文本不重复请求 |
 
 ## 翻译引擎
 
-| 引擎 | 类型 | 配置 |
+| 引擎 | 类型 | 需要 |
 | --- | --- | --- |
 | Google 翻译 | 机器翻译 | 免费，开箱即用（默认） |
-| Microsoft 翻译 | 机器翻译 | Azure Translator Key + 区域（免费层每月 200 万字符） |
-| DeepL | 机器翻译 | API Key，`:fx` 结尾自动走 Free 接口 |
-| OpenAI GPT | 大模型 | API Key，可改 API 地址与模型 |
-| Google Gemini | 大模型 | API Key |
-| DeepSeek | 大模型 | API Key |
-| Anthropic Claude | 大模型 | API Key |
-| 自定义 | 大模型 | 任意 OpenAI 兼容接口：Ollama、LM Studio、OpenRouter、通义千问、Kimi 等 |
+| DeepL | 机器翻译 | Premium |
+| Microsoft 翻译 | 机器翻译 | Premium |
+| OpenAI GPT | 大模型 | Premium+ |
+| Google Gemini | 大模型 | Premium+ |
+| DeepSeek | 大模型 | Premium+ |
+| Anthropic Claude | 大模型 | Premium+（每月 2000 万 Token） |
 
-大模型翻译会把多个段落打包成一次请求（JSON 数组进、JSON 数组出），解析失败时自动降级为逐段翻译。提示词和 temperature 可在“AI 翻译设置”中修改。
-
-## 安装
-
-1. 打开 `chrome://extensions`，开启右上角“开发者模式”
-2. 点击“加载已解压的扩展程序”，选择本项目根目录
-3. 首次安装会自动打开设置页，Google 翻译无需配置即可使用
-
-无需构建步骤，纯原生 JavaScript（ES Modules）。修改代码后在扩展页点“重新加载”即可。
-
-## 快捷键
-
-| 快捷键 | 作用 |
-| --- | --- |
-| `Alt+A` | 翻译 / 还原当前页面 |
-| `Alt+S` | 切换双语 / 仅译文 |
-| `Alt+Q` | 打开 / 收起侧面板 |
-| 按住 `Alt` 悬停 | 翻译鼠标下的段落 |
-
-可在 `chrome://extensions/shortcuts` 中自定义。
+扩展里不填写任何 API Key：Google 由浏览器直接调用，其余引擎由后端的翻译代理调用，服务商 Key 只在后端。大模型翻译会把多个段落打包成一次请求（JSON 数组进、JSON 数组出），解析失败时自动降级为逐段翻译。
 
 ## 目录结构
 
@@ -75,16 +56,18 @@ manifest.json
 src/
   shared/          settings.js（默认设置/读写）  languages.js（语言与各引擎代码映射）
   background/      index.js（消息路由、缓存、右键菜单、快捷键）  cache.js（IndexedDB）
-    engines/       mt.js（Google/Microsoft/DeepL）  llm.js（GPT/Gemini/DeepSeek/Claude/自定义）
+                   account.js（登录、会员、翻译代理、生词同步）
+    engines/       mt.js（Google）
   content/         content.js（页面翻译、悬浮球、划词、悬停、输入框）
                    content.css（页面内译文样式）  ui.css（Shadow DOM 内的 UI）
                    yt-hook.js（MAIN world 拦截字幕请求）  youtube.js（双语字幕渲染）
 panel/             侧边面板（工具栏弹窗与网页内抽屉共用同一页面）
 options/           设置页
+premium/           Premium 方案页
 styles/theme.css   共享主题
 icons/
 docs/              配置、测试、开发、后端部署文档与示例配置
-supabase/          后端：数据库迁移、Edge Functions（Stripe 订阅）
+supabase/          后端：数据库迁移、Edge Functions（翻译代理、Stripe 订阅）
 tests/             e2e.py（Playwright 端到端测试）  fixtures/（测试页）
 ```
 

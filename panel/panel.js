@@ -1,5 +1,5 @@
 // 面板：工具栏弹窗与网页内侧边抽屉共用同一页面
-import { getSettings, saveSettings, ENGINES, hostMatches } from '../src/shared/settings.js';
+import { getSettings, saveSettings, ENGINES, hostMatches, canUse, PLAN_NAME, FREE_WORD_LIMIT } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES, getLang } from '../src/shared/languages.js';
 import { buildShort } from '../src/shared/build.js';
 import { TERMS } from '../src/shared/config.js';
@@ -73,7 +73,12 @@ try {
 // 账户：{ configured, loggedIn, email, account: { plan, status, periodEnd, cancelAtPeriodEnd, hasBilling } }
 let acct = { configured: false, loggedIn: false, email: null, account: null };
 let auth = { mode: 'signin', email: '', msg: '', kind: '', busy: false };
-const isPro = () => acct.account?.plan === 'pro';
+const plan = () => acct.account?.plan || 'free';
+const isMember = () => plan() !== 'free';
+function openPremium() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('premium/premium.html') });
+  if (MODE === 'popup') window.close();
+}
 
 async function send(type, data = {}) {
   const r = await chrome.runtime.sendMessage({ type, ...data });
@@ -154,7 +159,6 @@ const onOff = [
   ['off', '已关闭'],
 ];
 const engineOf = (id) => ENGINES.find((e) => e.id === id);
-const engineReady = (e) => !e.needKey || !!S.engines[e.id]?.apiKey;
 const langOpts = (list) => list.map((l) => [l.code, l.name]);
 
 const PICKERS = {
@@ -166,13 +170,19 @@ const PICKERS = {
       ENGINES.map((e) => [
         e.id,
         e.name,
-        e.free ? '<span class="tag free">免费</span>' : e.id === 'custom' ? '<span class="tag">兼容接口</span>' : engineReady(e) ? '<span class="tag">已配置</span>' : '<span class="tag need">需 API Key</span>',
-        e.type === 'llm' ? S.engines[e.id]?.model : '',
+        e.tier === 'free'
+          ? '<span class="tag free">免费</span>'
+          : `<span class="tag ${canUse(plan(), e.id) ? 'pro' : 'need'}">${PLAN_NAME[e.tier]}</span>`,
+        e.tier === 'free' ? '浏览器直接翻译' : e.type === 'llm' ? '大模型 · 由微光翻译服务器提供' : '由微光翻译服务器提供',
       ]),
-    footer: '<button class="link" data-act="options" data-hash="engines">配置 API Key 与模型 ' + IC.chev + '</button>',
-    after: (v) => {
+    footer: '<button class="link" data-act="premium">查看会员方案 ' + IC.chev + '</button>',
+    // 未解锁的引擎不切换，直接打开 Premium 页面
+    guard: (v) => {
+      if (canUse(plan(), v)) return true;
       const e = engineOf(v);
-      if (!engineReady(e)) toast(`${e.name} 需要先配置 API Key`);
+      toast(`${e.name} 需要 ${PLAN_NAME[e.tier]} 会员`);
+      openPremium();
+      return false;
     },
   },
   youtube: {
@@ -267,7 +277,7 @@ function header(title) {
   if (!title) {
     return `<header class="hd">
       <div class="brand"><img src="../icons/icon48.png" alt="" /><span>微光翻译</span></div>
-      ${isPro() ? `<button class="chip pro" data-go="account" title="Pro 会员">${IC.crown}Pro</button>` : `<span class="chip">v${VERSION}</span>`}</header>`;
+      <button class="chip premium ${isMember() ? 'on' : ''}" data-act="premium" title="会员方案">${isMember() ? IC.crown : ''}${plan() === 'premium_plus' ? 'Premium+' : 'Premium'}</button></header>`;
   }
   return `<header class="hd">
     ${history.length ? `<button class="back" data-act="back" title="返回">${IC.back}</button>` : ''}
@@ -355,7 +365,7 @@ const VIEWS = {
       `<button class="ri" data-act="${act}" data-hash="${hash}"><span class="ic">${icon}</span>
         <span class="lb">${label}</span><span class="val">${val}</span><span class="chev">${IC.chev}</span></button>`;
     const acctVal = acct.loggedIn ? esc(acct.email || '') : '登录 / 注册';
-    const acctTag = isPro() ? `<span class="tag pro">${IC.crown}Pro</span>` : '';
+    const acctTag = isMember() ? `<span class="tag pro">${IC.crown}${PLAN_NAME[plan()]}</span>` : '';
     return `${header('设置')}
     <div class="body">
       <div class="group">
@@ -376,7 +386,6 @@ const VIEWS = {
         ${row('targetLang', IC.globe, '', '翻译语言')}
         ${row('sourceLang', IC.detect, '', '网页语言')}
         ${link('options', 'sites', IC.sites, '网站规则', `${S.alwaysSites.length + S.neverSites.length} 条`)}
-        ${link('options', 'engines', IC.key, 'API Key')}
         ${link('shortcuts', '', IC.keyboard, '配置快捷键')}
       </div>
       <div class="group">
@@ -431,37 +440,43 @@ const VIEWS = {
 
     // ---- 已登录 ----
     const a = acct.account || {};
-    const pro = a.plan === 'pro';
+    const member = isMember();
     const date = (iso) => (iso ? new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
     let status = '';
-    if (pro && a.status === 'past_due') status = '付款失败，请在“管理订阅”中更新支付方式';
-    else if (pro && a.cancelAtPeriodEnd) status = `已取消续费，Pro 有效期至 ${date(a.periodEnd)}`;
-    else if (pro) status = `${a.status === 'trialing' ? '试用中，' : ''}下次续费：${date(a.periodEnd)}`;
+    if (member && a.status === 'past_due') status = '付款失败，请在“管理订阅”中更新支付方式';
+    else if (member && a.cancelAtPeriodEnd) status = `已取消续费，${PLAN_NAME[plan()]} 有效期至 ${date(a.periodEnd)}`;
+    else if (member) status = `${a.status === 'trialing' ? '试用中，' : ''}下次续费：${date(a.periodEnd)}`;
     else if (a.status === 'canceled') status = '订阅已结束';
     const initial = esc((acct.email || '?').trim()[0].toUpperCase());
+    const u = a.usage || {};
+    const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + ' 百万' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n || 0));
+    const pct = Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+    const usageCard =
+      plan() === 'premium_plus'
+        ? `<div class="card box usage"><div class="line"><span class="t">本月 AI 用量</span><span class="s">${fmt(u.tokens)} / ${fmt(u.limit || 20e6)} Token</span></div>
+           <div class="bar"><i style="width:${pct}%"></i></div><div class="hint">每月 1 日重置；用完后可继续使用 Google、DeepL、Microsoft</div></div>`
+        : '';
 
     return `${header('账户')}
     <div class="body">
       <div class="card box acct">
         <div class="avatar">${initial}</div>
         <div class="acct-info"><b>${esc(acct.email || '')}</b>
-          <span class="plan ${pro ? 'pro' : ''}">${pro ? IC.crown + 'Pro 会员' : '免费版'}</span></div>
+          <span class="plan ${member ? 'pro' : ''}">${member ? IC.crown + PLAN_NAME[plan()] + ' 会员' : '免费版'}</span></div>
         <button class="mini" data-act="acctRefresh" title="刷新会员状态">${IC.refresh}</button>
       </div>
       ${status ? `<div class="status-line">${esc(status)}</div>` : ''}
       ${msg}
+      ${usageCard}
       ${
-        pro
-          ? `<button class="ghost wide" data-act="portal">${IC.card} 管理订阅</button>
-             <div class="hint">在 Stripe 页面中更换方案、修改支付方式、取消订阅或下载发票。</div>`
+        member
+          ? `${plan() === 'premium' ? `<button class="gold" data-act="premium">升级到 Premium+ 解锁全部 AI 引擎</button>` : ''}
+             <button class="ghost wide" data-act="portal">${IC.card} 管理订阅</button>
+             <div class="hint">在 Stripe 页面中切换方案、修改支付方式、取消订阅或下载发票。</div>`
           : `<div class="card box pro-card">
-              <div class="pro-title">${IC.crown} 升级 Pro</div>
-              <div class="s">支持微光翻译持续开发，解锁 Pro 功能。</div>
-              <div class="pro-btns">
-                <button class="primary" data-act="checkout" data-interval="month" ${auth.busy ? 'disabled' : ''}>月付</button>
-                <button class="primary alt" data-act="checkout" data-interval="year" ${auth.busy ? 'disabled' : ''}>年付</button>
-              </div>
-              <div class="hint">点击后在新标签页打开 Stripe 安全支付，价格以支付页为准。</div>
+              <div class="pro-title">${IC.crown} 开通会员</div>
+              <div class="s">Premium：无限生词本、云同步、DeepL / Microsoft 专业翻译<br/>Premium+：再加 GPT、Gemini、DeepSeek、Claude</div>
+              <button class="gold" data-act="premium">查看会员方案</button>
             </div>
             ${a.hasBilling ? `<button class="link" data-act="portal">查看账单与发票 ${IC.chev}</button>` : ''}`
       }
@@ -475,7 +490,9 @@ const VIEWS = {
     return `${header(`生词本 · ${words.length}`)}
     <div class="body"><div class="card words-card">${
       words.length
-        ? `<div class="wl-head"><span>已掌握 ${mastered} / ${words.length}</span>${expandBtn()}</div>${wordRows(words, expanded)}`
+        ? `<div class="wl-head"><span>已掌握 ${mastered} / ${words.length}</span>${expandBtn()}</div>
+           <div class="hint">${isMember() ? '已同步到账号，换设备登录后自动恢复' : `免费版最多 ${FREE_WORD_LIMIT} 个，<button class="link gold-link" data-act="premium">开通 Premium</button> 不限数量并云同步`}</div>
+           ${wordRows(words, expanded)}`
         : `<div class="empty">${IC.inbox}<div>暂无生词</div></div>`
     }</div></div>`;
   },
@@ -636,6 +653,7 @@ document.addEventListener('click', async (e) => {
   if (d.set !== undefined) {
     const key = view.slice(5);
     const p = PICKERS[key];
+    if (p.guard && !p.guard(d.set)) return;
     await save(p.set(d.set));
     p.after?.(d.set);
     render();
@@ -684,11 +702,8 @@ document.addEventListener('click', async (e) => {
       await loadAccount(true);
       render();
       return toast('会员状态已刷新');
-    case 'checkout':
-      return busy(async () => {
-        await send('billingCheckout', { interval: d.interval });
-        showMsg('已在新标签页打开支付页面，完成支付后这里会自动更新', 'ok');
-      });
+    case 'premium':
+      return openPremium();
     case 'portal':
       return busy(() => send('billingPortal'));
     case 'back':
@@ -723,12 +738,13 @@ document.addEventListener('click', async (e) => {
       return speechSynthesis.speak(u);
     }
     case 'master': {
-      await saveWords(words.map((w) => (keyOf(w.w) === d.k ? { ...w, m: !w.m } : w)));
+      await saveWords(words.map((w) => (keyOf(w.w) === d.k ? { ...w, m: !w.m, u: Date.now() } : w)));
       const w = findWord(d.k);
       return toast(w?.m ? '已标记为掌握' : '已取消掌握');
     }
     case 'unsave': {
-      await saveWords(words.filter((w) => keyOf(w.w) !== d.k));
+      const w = findWord(d.k);
+      if (w) await send('toggleWord', { word: w.w });
       return toast('已从生词本移除');
     }
   }

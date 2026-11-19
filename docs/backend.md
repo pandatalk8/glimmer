@@ -1,6 +1,6 @@
 # 后端部署指南：Supabase + Stripe
 
-账户和订阅功能需要一个后端。整套后端只用两家服务：**Supabase** 负责注册登录和数据库，**Stripe** 负责收款。代码都在仓库的 `supabase/` 目录，照着下面的步骤做一遍，大约 30 分钟。
+账户、会员订阅、付费翻译引擎和生词本云同步都需要后端。整套后端只用两家服务：**Supabase** 负责注册登录、数据库和翻译代理，**Stripe** 负责收款；DeepL、Microsoft 和各家大模型的 Key 只保存在后端。代码都在仓库的 `supabase/` 目录，照着下面的步骤做一遍，大约 30 分钟。
 
 > 先用 Stripe 的**测试模式**跑通，确认无误后再切换到正式模式。测试模式不会产生真实扣款。
 >
@@ -20,20 +20,32 @@
 新标签页打开 Stripe 支付页 ──支付──▶ Stripe ──webhook──▶ Edge Function：stripe-webhook
    │                                                        │ 验证签名，写入 subscriptions、profiles
    ▼                                                        ▼
-返回页 billing-return ──扩展检测到后刷新会员状态◀── 数据库 plan = 'pro'
+返回页 billing-return ──扩展检测到后刷新会员状态◀── 数据库 plan = 'premium' / 'premium_plus'
+
+扩展（DeepL / Microsoft / 大模型）──▶ Edge Function：translate
+                                       │ 校验登录与会员等级、本月 Token 用量
+                                       ▼
+                              DeepL · Azure · OpenAI · Gemini · DeepSeek · Claude
+                                       │ 译文 + Token 数
+                                       ▼
+                              usage_monthly 累加（add_usage）
+扩展（生词本）──会员登录后双向同步──▶ 数据库 words（RLS：仅会员读写自己的词）
 ```
 
 | 目录 / 文件 | 作用 |
 | --- | --- |
 | `supabase/migrations/…_accounts_billing.sql` | 建表：`profiles`（会员状态）、`subscriptions`（订阅明细）、`stripe_events`（事件去重），以及行级权限和注册触发器 |
-| `supabase/functions/billing-checkout` | 创建 Stripe 订阅支付页，需要登录 |
+| `supabase/migrations/…_tiers_usage_words.sql` | 三档会员（`free` / `premium` / `premium_plus`）、`usage_monthly`（每月 Token 用量）、`add_usage` 原子累加、`words`（生词本云同步） |
+| `supabase/functions/translate` | 翻译代理：校验会员等级与本月用量，调用 DeepL、Microsoft 或大模型，记录用量 |
+| `supabase/functions/_shared/translate.ts` | 引擎等级表、访问检查、各服务商请求，有单元测试 |
+| `supabase/functions/billing-checkout` | 按所选方案（Premium 年付、Premium+ 月付 / 年付）创建 Stripe 订阅支付页，需要登录；已是会员时提示改用客户门户 |
 | `supabase/functions/billing-portal` | 打开 Stripe 客户门户（换方案、改卡、取消、发票），需要登录 |
 | `supabase/functions/stripe-webhook` | 接收 Stripe 事件，验证签名后同步会员状态 |
 | `supabase/functions/billing-return` | 支付完成 / 取消后显示的返回页 |
 | `supabase/functions/_shared/billing.ts` | 订阅同步的核心逻辑，有单元测试 |
 | `src/shared/config.js` | 扩展里填写 Supabase 地址和 anon key |
 
-**会员状态只由后端写入。** 用户在数据库里只有“读自己那一行”的权限，无法把自己改成 Pro。
+**会员状态只由后端写入。** 用户在数据库里只有“读自己那一行”的权限，无法把自己改成会员；用量也只能由翻译代理写入。
 
 ---
 
@@ -93,13 +105,23 @@ npx supabase db push
 
 **第一步，开启测试模式。** 登录 [dashboard.stripe.com](https://dashboard.stripe.com)，右上角打开 “Test mode”。
 
-**第二步，创建产品和价格。** Product catalog → Add product：
+**第二步，创建产品和价格。** 推荐直接运行脚本（读取 `supabase/functions/.env` 中的 `STRIPE_SECRET_KEY`，可重复执行，已存在的不会重复创建）：
 
-- 名称：微光翻译 Pro
-- 添加两个**循环（Recurring）**价格：每月、每年，金额自定
-- 保存后记下两个价格 ID（`price_…`）
+```bash
+python3 scripts/setup_stripe.py
+```
 
-**第三步，开启客户门户。** Settings → Billing → Customer portal：打开“允许取消订阅”“允许更换方案”（把月付、年付两个价格都加入），保存。
+脚本会创建两个产品、三个价格和客户门户配置，并把 ID 写回 `.env`：
+
+| 产品 | 价格 | lookup_key | 环境变量 |
+| --- | --- | --- | --- |
+| 微光翻译 Premium | $29 / 年 | `glimmer_premium_yearly` | `STRIPE_PRICE_PREMIUM_YEARLY` |
+| 微光翻译 Premium+ | $6 / 月 | `glimmer_plus_monthly` | `STRIPE_PRICE_PLUS_MONTHLY` |
+| 微光翻译 Premium+ | $69 / 年 | `glimmer_plus_yearly` | `STRIPE_PRICE_PLUS_YEARLY` |
+
+也可以在后台 Product catalog 手动创建，金额和周期按上表填写。
+
+**第三步，客户门户。** 脚本已创建门户配置（`STRIPE_PORTAL_CONFIGURATION`，允许取消订阅、在三个价格之间升级或切换、改卡、下载发票）。手动配置时在 Settings → Billing → Customer portal 中开启同样的选项，并把三个价格都加入“可切换的产品”。
 
 **第四步，记下密钥。** Developers → API keys：复制 Secret key（`sk_test_…`）。
 
@@ -119,15 +141,39 @@ npx supabase db push
 npx supabase secrets set \
   STRIPE_SECRET_KEY=sk_test_xxx \
   STRIPE_WEBHOOK_SECRET=whsec_xxx \
-  STRIPE_PRICE_MONTHLY=price_xxx \
-  STRIPE_PRICE_YEARLY=price_xxx
+  STRIPE_PRICE_PREMIUM_YEARLY=price_xxx \
+  STRIPE_PRICE_PLUS_MONTHLY=price_xxx \
+  STRIPE_PRICE_PLUS_YEARLY=price_xxx \
+  STRIPE_PORTAL_CONFIGURATION=bpc_xxx
 ```
+
+再设置翻译服务商的 Key（只填你打算提供的引擎；没有 Key 的引擎会提示“服务端尚未配置 … 的 API Key”）：
+
+```bash
+npx supabase secrets set \
+  DEEPL_API_KEY=xxx \
+  AZURE_TRANSLATOR_KEY=xxx AZURE_TRANSLATOR_REGION=eastasia \
+  OPENAI_API_KEY=sk-xxx GEMINI_API_KEY=xxx DEEPSEEK_API_KEY=sk-xxx ANTHROPIC_API_KEY=sk-ant-xxx
+```
+
+| 变量 | 作用 | 默认值 |
+| --- | --- | --- |
+| `DEEPL_API_KEY` | DeepL，Key 以 `:fx` 结尾时自动使用 Free 接口 | — |
+| `AZURE_TRANSLATOR_KEY`、`AZURE_TRANSLATOR_REGION` | Microsoft 翻译（Azure Translator，F0 免费层每月 200 万字符） | — |
+| `OPENAI_API_KEY`、`OPENAI_MODEL` | GPT | `gpt-4.1-mini` |
+| `GEMINI_API_KEY`、`GEMINI_MODEL` | Gemini | `gemini-2.5-flash` |
+| `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` | DeepSeek | `deepseek-chat` |
+| `ANTHROPIC_API_KEY`、`CLAUDE_MODEL` | Claude | `claude-haiku-5-5` |
+| `TOKEN_LIMIT_MONTHLY` | Premium+ 每月 Token 额度 | `20000000` |
+
+各家 Key 的申请方式：[DeepL API](https://www.deepl.com/pro-api)、[Azure 门户](https://portal.azure.com) 搜索 Translator、[OpenAI](https://platform.openai.com/api-keys)、[Google AI Studio](https://aistudio.google.com/apikey)、[DeepSeek](https://platform.deepseek.com)、[Anthropic Console](https://console.anthropic.com)。
 
 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由平台自动注入，不需要手动设置。可选的 `STRIPE_PORTAL_CONFIGURATION`（`bpc_…`）指定客户门户配置，适合不方便在后台保存默认门户设置时，用 `stripe billing_portal configurations create` 创建后填入。可选的 `PUBLIC_SUPABASE_URL` 用于拼接支付返回页地址，云端不需要设置，只在本地运行时需要（见本地运行指南）。
 
-**第二步，部署 4 个函数。**
+**第二步，部署 5 个函数。**
 
 ```bash
+npx supabase functions deploy translate
 npx supabase functions deploy billing-checkout
 npx supabase functions deploy billing-portal
 npx supabase functions deploy stripe-webhook --no-verify-jwt
@@ -159,11 +205,13 @@ export const BACKEND = {
 | --- | --- | --- |
 | 1 | 面板 → 设置 → 账户 → 注册 | 提示“验证邮件已发送” |
 | 2 | 点击邮件中的验证链接，回到面板登录 | 显示邮箱和“免费版” |
-| 3 | 点击“月付” | 新标签页打开 Stripe 支付页 |
+| 3 | 面板首页右上角“Premium” → 方案页切到“月付方案” → “开通 Premium+” | 新标签页打开 Stripe 支付页 |
 | 4 | 用测试卡 `4242 4242 4242 4242`，任意未来日期、任意 CVC 付款 | 跳到“订阅成功”页面 |
-| 5 | 回到面板 | 几秒内变为“Pro 会员”，显示下次续费日期，标题栏出现金色 Pro 标识 |
-| 6 | 点击“管理订阅” → 取消订阅 | 回到面板后显示“已取消续费，Pro 有效期至……” |
-| 7 | 在 Stripe 后台把该订阅立即取消 | 面板刷新后变回“免费版” |
+| 5 | 回到面板 | 几秒内变为“Premium+ 会员”，显示下次续费日期和本月 AI 用量，右上角变为实心“Premium+” |
+| 6 | 设置 → 翻译引擎选 DeepSeek，翻译一个网页 | 译文正常；账户页本月用量增加，`usage_monthly` 有记录 |
+| 7 | 收藏一个生词 | `words` 表出现该词（Premium 及以上自动同步） |
+| 8 | 点击“管理订阅” → 取消订阅 | 回到面板后显示“已取消续费，Premium+ 有效期至……” |
+| 9 | 在 Stripe 后台把该订阅立即取消 | 面板刷新后变回“免费版” |
 
 在 Supabase 后台 Table Editor 中可以看到 `profiles`、`subscriptions` 的对应变化；Edge Functions → stripe-webhook → Logs 中能看到每个事件的处理结果。
 
@@ -179,6 +227,8 @@ stripe trigger customer.subscription.updated
 ## 七、上线前检查
 
 - [ ] Stripe 切换到正式模式，重新创建产品价格、webhook，用正式的 `sk_live_…`、`whsec_…`、`price_…` 重新执行 `secrets set`
+- [ ] 各翻译服务商的正式 Key 已设置，并在服务商后台设置用量上限或告警，防止异常消耗
+- [ ] 根据大模型成本核对 `TOKEN_LIMIT_MONTHLY` 与 Premium+ 价格
 - [ ] 配置自己的 SMTP 邮件服务，修改验证邮件、重置密码邮件的模板为中文
 - [ ] Supabase 项目开启数据库备份
 - [ ] 隐私政策中说明：会收集邮箱用于登录，支付信息由 Stripe 处理，扩展和我们的服务器不接触银行卡信息
@@ -192,13 +242,19 @@ stripe trigger customer.subscription.updated
 | --- | --- |
 | 账户页显示“账户服务尚未配置” | `src/shared/config.js` 没填，或填完没有重新加载扩展 |
 | 注册提示“操作太频繁” | Supabase 默认邮件服务的频率限制，配置自己的 SMTP |
-| 点击月付提示“缺少环境变量 STRIPE_PRICE_MONTHLY” | 第四部分的 `secrets set` 没有执行或拼写错误 |
+| 点击“开通”提示“缺少环境变量 STRIPE_PRICE_…” | 第四部分的 `secrets set` 没有执行或拼写错误 |
+| 会员翻译提示“服务端尚未配置 … 的 API Key” | 该引擎对应的服务商 Key 没有设置（`translate` 函数返回 503），见第四部分 |
+| Premium+ 提示“本月 AI 用量已用完” | 已达到 `TOKEN_LIMIT_MONTHLY`；下月 1 日（UTC）自动清零，测试时可删除 `usage_monthly` 中对应行 |
 | 支付成功但一直是免费版 | 检查 Stripe 后台 webhook 的发送记录：401 说明部署时漏了 `--no-verify-jwt`；400 说明 `STRIPE_WEBHOOK_SECRET` 不对；500 查看函数日志 |
 | 点击“管理订阅”报错 | Stripe 后台没有保存客户门户设置（第三部分第三步） |
 | 测试时想重置某个用户为免费版 | 在 SQL Editor 执行 `update profiles set plan='free' where email='…'`，或在 Stripe 后台取消其订阅 |
 
 ---
 
-## 九、Pro 会员判断
+## 九、会员等级判断
 
-扩展后台提供 `isPro()`（`src/background/account.js`），读取本地缓存的会员状态。缓存在打开面板、进入账户页、支付返回时刷新。需要收费的功能在后台调用它判断即可；涉及服务端资源的功能（例如由我们提供的 AI 翻译额度），应当在 Edge Function 中根据 `profiles.plan` 再次校验，不能只信任扩展本地的判断。
+等级定义在 `src/shared/settings.js`（`ENGINES` 的 `tier`、`canUse`）和 `supabase/functions/_shared/translate.ts`（`ENGINE_TIER`、`checkAccess`），两边需保持一致。扩展的判断只用于界面提示（标注等级、打开方案页）；真正的校验在后端：
+
+- `translate` 函数从 `profiles.plan` 读取等级，等级不够返回 403（`upgrade`），Premium+ 本月用量超过额度返回 429（`quota`），单次超过 100 段或 2 万字符返回 413
+- `words` 表的 RLS 只允许 `is_member(uid)` 为真的用户读写
+- 生词本 100 个的免费上限在扩展后台（`toggleWord`）执行，属于本地功能限制

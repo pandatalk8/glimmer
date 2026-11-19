@@ -15,12 +15,11 @@
 ## 常用命令
 
 ```bash
-python3 tests/e2e.py          # 核心回归，14 项
-python3 tests/e2e_real.py     # 真实网站与交互，54 项
-python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），29 项
-deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅逻辑，9 项
-python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），15 项
-python3 tests/e2e_engines.py  # 用 tests/.env.local 中的 Key 测试引擎
+python3 tests/e2e.py          # 核心回归，15 项
+python3 tests/e2e_real.py     # 真实网站与交互，55 项
+python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），40 项
+deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅与翻译代理逻辑，19 项
+python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），22 项
 python3 tests/check_diagrams.py  # 文档中的 Mermaid 图能否正常渲染
 ```
 
@@ -28,7 +27,7 @@ python3 tests/check_diagrams.py  # 文档中的 Mermaid 图能否正常渲染
 
 ## 后端
 
-`supabase/` 是 Supabase 项目（迁移 + Edge Functions），部署步骤见 `docs/backend.md`。会员状态只能由 Edge Functions（service role）写入；service_role key 和 Stripe 密钥绝不能写进扩展代码或提交到仓库。
+`supabase/` 是 Supabase 项目（迁移 + Edge Functions），部署步骤见 `docs/backend.md`。会员状态和用量只能由 Edge Functions（service role）写入；service_role key、Stripe 密钥和翻译服务商的 Key 只放在 `supabase/functions/.env` 或 `supabase secrets` 中，绝不能写进扩展代码或提交到仓库。引擎的会员等级在 `src/shared/settings.js` 与 `supabase/functions/_shared/translate.ts` 两处定义，必须保持一致。
 
 ## 文档
 

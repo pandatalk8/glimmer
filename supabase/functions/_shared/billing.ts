@@ -1,7 +1,8 @@
 // 订阅同步的核心逻辑：把 Stripe 事件转换成数据库更新。
 // 不直接依赖 Stripe SDK 和 Supabase 客户端，通过 deps 注入，便于单元测试。
 
-export type Plan = 'free' | 'pro';
+export type Plan = 'free' | 'premium' | 'premium_plus';
+export type PaidPlan = Exclude<Plan, 'free'>;
 
 export interface StripeSubscriptionLike {
   id: string;
@@ -49,15 +50,31 @@ export interface BillingDeps {
   updateProfile(userId: string, patch: ProfilePatch): Promise<void>;
   upsertSubscription(row: SubscriptionRow): Promise<void>;
   retrieveSubscription(id: string): Promise<StripeSubscriptionLike>;
+  /** 价格 ID 对应的会员等级（Premium 年付 → premium；Premium+ 月付 / 年付 → premium_plus） */
+  planForPrice(priceId: string | null): PaidPlan;
 }
 
 // 这些状态视为有效订阅
 const ACTIVE = new Set(['active', 'trialing']);
-// past_due 时给用户宽限期，仍保留 Pro，直到 Stripe 最终取消
+// past_due 时给用户宽限期，仍保留会员，直到 Stripe 最终取消
 const GRACE = new Set(['past_due']);
 
-export function planFromStatus(status: string | null | undefined): Plan {
-  return status && (ACTIVE.has(status) || GRACE.has(status)) ? 'pro' : 'free';
+/** 订阅是否让用户保有会员资格 */
+export function isEntitled(status: string | null | undefined): boolean {
+  return !!status && (ACTIVE.has(status) || GRACE.has(status));
+}
+
+/** 订阅状态 + 价格 → 会员等级 */
+export function planFor(status: string | null | undefined, priceId: string | null, planForPrice: (p: string | null) => PaidPlan): Plan {
+  return isEntitled(status) ? planForPrice(priceId) : 'free';
+}
+
+/** 由环境变量构建“价格 → 等级”映射；未知价格（如旧版 Pro 价格）按 premium_plus 处理，不让老用户降级 */
+export function priceMap(env: { premiumYearly?: string; plusMonthly?: string; plusYearly?: string }) {
+  return (priceId: string | null): PaidPlan => {
+    if (priceId && priceId === env.premiumYearly) return 'premium';
+    return 'premium_plus';
+  };
 }
 
 const toIso = (sec: number | null | undefined) => (sec ? new Date(sec * 1000).toISOString() : null);
@@ -85,7 +102,7 @@ export async function syncSubscription(sub: StripeSubscriptionLike, deps: Billin
     cancel_at_period_end: !!sub.cancel_at_period_end,
   });
   await deps.updateProfile(userId, {
-    plan: planFromStatus(sub.status),
+    plan: planFor(sub.status, item?.price?.id ?? null, deps.planForPrice),
     stripe_customer_id: cust,
     subscription_status: sub.status,
     current_period_end: end,

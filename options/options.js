@@ -1,4 +1,4 @@
-import { getSettings, saveSettings, ENGINES, DEFAULT_SETTINGS, DEFAULT_PROMPT } from '../src/shared/settings.js';
+import { getSettings, saveSettings, ENGINES, DEFAULT_SETTINGS, PLAN_NAME, canUse } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES } from '../src/shared/languages.js';
 import { buildLabel, buildShort } from '../src/shared/build.js';
 
@@ -37,7 +37,7 @@ const opts = (list) => list.map((l) => `<option value="${l.code}">${l.name}</opt
 $('#targetLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#inputLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#sourceLang').innerHTML = opts(LANGUAGES);
-$('#engineSel').innerHTML = ENGINES.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
+$('#engineSel').innerHTML = ENGINES.map((e) => `<option value="${e.id}">${e.name}${e.tier === 'free' ? '' : '（' + PLAN_NAME[e.tier] + '）'}</option>`).join('');
 
 // ---------- data-path 双向绑定 ----------
 const getPath = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -81,123 +81,62 @@ function bindAll() {
 }
 
 // ---------- 翻译服务卡片 ----------
+// 除 Google 外，全部由微光翻译服务器提供，不再需要（也不能）填写 API Key
 const ENGINE_UI = {
-  google: { logo: 'G', color: '#4285f4', desc: '免费，无需配置，速度快，覆盖语言最多。', fields: [] },
-  microsoft: {
-    logo: 'M', color: '#00a4ef', desc: 'Azure 翻译服务，免费层每月 200 万字符。在 Azure 门户创建 Translator 资源获取 Key。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'Azure Translator Key' },
-      { k: 'region', label: '区域（全局资源可留空）', ph: 'eastasia', list: ['global', 'eastasia', 'southeastasia', 'eastus', 'westeurope'] },
-    ],
-  },
-  deepl: {
-    logo: 'D', color: '#0f2b46', desc: '欧洲语言翻译质量出色。免费 Key 以 :fx 结尾，会自动使用 Free 接口。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'xxxxxxxx-xxxx-xxxx:fx' },
-      { k: 'apiUrl', label: '自定义 API 地址（可选）', ph: '留空则自动选择 Free / Pro' },
-    ],
-  },
-  openai: {
-    logo: 'AI', color: '#10a37f', desc: 'OpenAI 官方接口，也可填任何 OpenAI 兼容的代理地址。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'sk-...' },
-      { k: 'baseUrl', label: 'API 地址', ph: 'https://api.openai.com/v1' },
-      { k: 'model', label: '模型', list: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o', 'gpt-5-mini', 'gpt-5'] },
-    ],
-  },
-  gemini: {
-    logo: '✦', color: '#1a73e8', desc: 'Google Gemini，在 Google AI Studio 免费申请 API Key。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'AIza...' },
-      { k: 'model', label: '模型', list: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'] },
-    ],
-  },
-  deepseek: {
-    logo: 'DS', color: '#4d6bfe', desc: 'DeepSeek 中文能力强，价格低。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'sk-...' },
-      { k: 'baseUrl', label: 'API 地址', ph: 'https://api.deepseek.com' },
-      { k: 'model', label: '模型', list: ['deepseek-chat', 'deepseek-reasoner'] },
-    ],
-  },
-  claude: {
-    logo: 'C', color: '#d97757', desc: 'Anthropic Claude，译文自然流畅，擅长长文与专业内容。',
-    fields: [
-      { k: 'apiKey', label: 'API Key', secret: true, ph: 'sk-ant-...' },
-      { k: 'model', label: '模型', list: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'] },
-    ],
-  },
-  custom: {
-    logo: '⚙', color: '#6b6b80', desc: '任何 OpenAI 兼容接口：Ollama、LM Studio、OpenRouter、通义千问、Kimi、智谱等。',
-    fields: [
-      { k: 'baseUrl', label: 'API 地址', ph: 'http://localhost:11434/v1' },
-      { k: 'apiKey', label: 'API Key（可选）', secret: true, ph: '本地模型可留空' },
-      { k: 'model', label: '模型', ph: 'qwen2.5:7b' },
-    ],
-  },
+  google: { logo: 'G', color: '#4285f4', desc: '免费，无需登录，速度快，覆盖语言最多。' },
+  deepl: { logo: 'D', color: '#0f2b46', desc: '欧洲语言翻译质量出色，适合正式文档。' },
+  microsoft: { logo: 'M', color: '#00a4ef', desc: '与 Edge 浏览器内置翻译同源，速度快、稳定。' },
+  openai: { logo: 'AI', color: '#10a37f', desc: 'GPT 大模型，理解上下文，译文自然。' },
+  gemini: { logo: '✦', color: '#1a73e8', desc: 'Google Gemini 大模型，速度快。' },
+  deepseek: { logo: 'DS', color: '#4d6bfe', desc: '中文能力强，适合中英互译。' },
+  claude: { logo: 'C', color: '#d97757', desc: '译文流畅，擅长长文与专业内容。' },
 };
+
+let plan = 'free';
+async function loadPlan() {
+  const { account } = await chrome.storage.local.get('account');
+  plan = account?.plan || 'free';
+}
 
 function renderEngines() {
   const box = $('#engineCards');
   box.innerHTML = ENGINES.map((e) => {
     const ui = ENGINE_UI[e.id];
-    const cfg = S.engines[e.id] || {};
     const isDefault = S.engine === e.id;
-    const tag = e.free ? '<span class="e-tag free">免费</span>' : e.type === 'llm' ? '<span class="e-tag llm">大模型</span>' : '<span class="e-tag">API</span>';
-    const fields = ui.fields
-      .map((f) => {
-        const listId = f.list ? `dl-${e.id}-${f.k}` : '';
-        const input = `<input type="${f.secret ? 'password' : 'text'}" data-engine="${e.id}" data-k="${f.k}" value="${esc(cfg[f.k])}" placeholder="${esc(f.ph || '')}" ${listId ? `list="${listId}"` : ''} spellcheck="false" autocomplete="off" />`;
-        const dl = f.list ? `<datalist id="${listId}">${f.list.map((m) => `<option value="${m}">`).join('')}</datalist>` : '';
-        return `<label class="e-field"><span>${f.label}</span>${f.secret ? `<div class="pw">${input}<button class="eye" type="button" title="显示/隐藏">👁</button></div>` : input}${dl}</label>`;
-      })
-      .join('');
+    const ok = canUse(plan, e.id);
+    const tag = e.tier === 'free' ? '<span class="e-tag free">免费</span>' : `<span class="e-tag ${e.tier === 'premium_plus' ? 'llm' : ''}">${PLAN_NAME[e.tier]}</span>`;
+    const action = ok
+      ? `<button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>`
+      : '<button class="ghost use" data-act="premium">升级解锁</button>';
     return `
-      <div class="card engine ${isDefault ? 'default' : ''}" data-id="${e.id}">
+      <div class="card engine ${isDefault ? 'default' : ''} ${ok ? '' : 'locked'}" data-id="${e.id}">
         <div class="e-head">
           <div class="e-logo" style="background:${ui.color}">${ui.logo}</div>
           <div><span class="e-name">${e.name}</span>${tag}</div>
-          <button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>
+          ${action}
         </div>
-        <p class="e-desc">${ui.desc}</p>
-        ${fields}
+        <p class="e-desc">${ui.desc}${e.tier === 'free' ? '' : ' 由微光翻译服务器提供，无需 API Key。'}</p>
         <div class="e-foot">
-          <button class="ghost test" data-act="test">测试连接</button>
-          <span class="e-result"></span>
+          ${ok ? '<button class="ghost test" data-act="test">测试连接</button>' : `<span class="e-result">需要 ${PLAN_NAME[e.tier]} 会员</span>`}
+          ${ok ? '<span class="e-result"></span>' : ''}
         </div>
       </div>`;
   }).join('');
   $('#engineSel').value = S.engine;
 }
 
-$('#engineCards').addEventListener('change', async (e) => {
-  const el = e.target;
-  if (!el.dataset.engine) return;
-  S = await saveSettings({ engines: { [el.dataset.engine]: { [el.dataset.k]: el.value.trim() } } });
-  toast('已保存');
-});
-
 $('#engineCards').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
-  const card = btn.closest('.engine');
-  const id = card.dataset.id;
-  if (btn.classList.contains('eye')) {
-    const inp = btn.previousElementSibling;
-    inp.type = inp.type === 'password' ? 'text' : 'password';
-    return;
-  }
+  const id = btn.closest('.engine').dataset.id;
+  if (btn.dataset.act === 'premium') return chrome.tabs.create({ url: chrome.runtime.getURL('premium/premium.html') });
   if (btn.dataset.act === 'use') {
     S = await saveSettings({ engine: id });
     renderEngines();
     toast('已设为默认翻译服务');
   }
   if (btn.dataset.act === 'test') {
-    // 先保存卡片中所有输入
-    const patch = {};
-    card.querySelectorAll('input[data-k]').forEach((i) => (patch[i.dataset.k] = i.value.trim()));
-    S = await saveSettings({ engines: { [id]: patch } });
-    const out = card.querySelector('.e-result');
+    const out = btn.parentElement.querySelector('.e-result');
     out.className = 'e-result';
     out.textContent = '测试中…';
     btn.disabled = true;
@@ -210,6 +149,21 @@ $('#engineCards').addEventListener('click', async (e) => {
       out.className = 'e-result err';
       out.textContent = '✗ ' + (r?.error || '失败');
     }
+  }
+});
+
+// 默认引擎下拉框：只允许选择已解锁的引擎
+$('#engineSel').addEventListener('change', async (e) => {
+  if (canUse(plan, e.target.value)) return;
+  toast(`该引擎需要 ${PLAN_NAME[ENGINES.find((x) => x.id === e.target.value).tier]} 会员`);
+  e.target.value = S.engine;
+  e.stopImmediatePropagation();
+}, true);
+
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local' && changes.account) {
+    await loadPlan();
+    renderEngines();
   }
 });
 
@@ -247,11 +201,6 @@ $('#styleGrid').addEventListener('click', async (e) => {
 });
 
 // ---------- 其他按钮 ----------
-$('#resetPrompt').onclick = async () => {
-  S = await saveSettings({ llm: { prompt: DEFAULT_PROMPT } });
-  bindAll();
-  toast('已恢复默认 Prompt');
-};
 $('#clearCache').onclick = async () => {
   await chrome.runtime.sendMessage({ type: 'clearCache' });
   toast('缓存已清除');
@@ -299,7 +248,8 @@ const io = new IntersectionObserver(
 );
 $$('.sec').forEach((s) => io.observe(s));
 
-function renderAll() {
+async function renderAll() {
+  await loadPlan();
   bindAll();
   renderEngines();
   renderStyles();

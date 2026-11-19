@@ -18,8 +18,15 @@
 - **登录、注册页面重做（参考 Trancy）**：顶部“‹ 返回”；登录页大标题“欢迎回来”与副标题；“继续使用 Google”按钮；带图标的邮箱、密码输入框；金色主按钮“使用邮箱登录 / 使用邮箱注册”；登录页底部“忘记密码？”与金色“注册账号”；注册页新增“以游客身份使用”、金色“已有账号，立即登录”与服务条款说明。注册不再需要重复输入密码。不提供 Apple 登录
 - **Google 登录**：点击“继续使用 Google”在授权窗口中登录（基于 Supabase OAuth 与 Chrome identity 接口）。Supabase 尚未开启 Google 登录时，提示“尚未开启 Google 登录”，不会弹出报错窗口
 - **账户：注册与登录**：面板 → 设置 → 账户，用邮箱和密码注册、登录；支持邮箱验证、忘记密码、退出登录；登录状态自动保持，令牌快过期时自动续期
-- **Pro 会员订阅**：账户页“升级 Pro”提供月付、年付，点击后在新标签页打开 Stripe 安全支付；支付完成后几秒内自动变为 Pro 会员，标题栏的版本标签换成金色“Pro”标识，设置页账户行也显示 Pro
-- **管理订阅**：Pro 会员可在账户页打开 Stripe 客户门户，更换方案、修改支付方式、取消订阅、下载发票；取消后显示“已取消续费，Pro 有效期至……”，付款失败时提示更新支付方式
+- **两档会员：Premium 与 Premium+**（价格为美元）
+  - Premium：$29 / 年（仅年付）。无限生词本、生词本云同步、DeepL 与 Microsoft 专业翻译
+  - Premium+：$6 / 月或 $69 / 年。Premium 全部权益，加上 GPT、Gemini、DeepSeek、Claude 四家大模型，每月 2000 万 Token
+  - 免费版：Google 翻译与全部翻译方式、YouTube 双语字幕，生词本最多 100 个
+- **Premium 方案页（参考 Trancy 定价页）**：面板首页右上角的“Premium”标签点击后打开。月付 / 年付切换（年付标注节省比例）、免费 / Premium / Premium+ 三张方案卡片、详细功能对比表、常见问题；当前方案金色描边。未登录时点“开通”弹出登录窗口，登录后自动继续所选方案；支付完成后页面自动刷新为当前方案
+- **付费引擎由后端提供，不再需要自己的 API Key**：DeepL、Microsoft 和四家大模型都由微光翻译后端代为调用，设置页不再有任何 Key 输入框；引擎列表与设置页卡片标注“免费 / Premium / Premium+”，选择未解锁的引擎时打开方案页。Google 翻译仍免费，由浏览器直接调用
+- **本月 AI 用量**：Premium+ 会员在账户页看到本月已用 Token 与进度条，每月 1 日重置；用完后大模型暂停到下月，DeepL、Microsoft、Google 照常可用
+- **生词本云同步**：会员收藏、删除、标记已掌握的生词自动同步到账号，换电脑或重装扩展后登录即可恢复；生词本页显示“已同步到账号”。免费版达到 100 个上限时提示升级
+- **管理订阅与升级**：会员可在账户页打开 Stripe 客户门户，切换方案、修改支付方式、取消订阅、下载发票；Premium 会员点“升级到 Premium+”会打开客户门户切换方案（差价自动折算），不会产生两份订阅。取消后显示“已取消续费，Premium+ 有效期至……”，付款失败时提示更新支付方式
 - **后端**：基于 Supabase（账户、数据库、Edge Functions）与 Stripe（收款）。用户只能读取自己的会员状态，无法自行修改；Stripe 通知经过签名验证，重复通知只处理一次
 
 - **点击工具栏图标，直接在网页内滑出侧面板**：再点一次滑回收起，快捷键 `Alt+Q` 同样可用。改动前点击图标弹出的是独立小弹窗
@@ -28,6 +35,10 @@
 
 ### 改进
 
+- 首页标题栏右上角的版本标签换成“Premium”入口；会员显示带皇冠的实心“Premium”或“Premium+”；版本号移到设置页“关于”一行
+- 账户页：免费版显示“开通会员”卡片，简介两档权益并链接方案页；Premium 会员多一个“升级到 Premium+”按钮
+- 弹窗形态的面板打开方案页后自动关闭，不挡住新页面
+- 会员引擎的长内容（如长视频字幕）自动按 50 段 / 1 万字符分批发送，不会因为单次过大被后端拒绝
 - 侧面板改为紧贴浏览器右边缘、从顶到底占满高度，宽度 460px，滑入滑出更顺滑
 - 首页顺序调整为：生词本与引擎卡片 → 翻译此页面 → 总在此网站开启 → 本页生词 → 快速翻译
 - 安装扩展前就已打开的网页，点击图标时自动补装翻译功能，不用再刷新页面
@@ -38,6 +49,8 @@
 
 ### 修复
 
+- 已登录用户打开 Premium 方案页时，误弹“登录成功”提示
+- 支付返回后自动刷新会员状态时，仍按旧的单档“Pro”判断是否已生效，导致多刷新几次；现在任何会员等级生效即停止
 - **Reddit 等网站上侧面板、悬浮球、译文不显示**：这类用 Web Components 构建的网站会隐藏“未注册的自定义元素”，插件的界面与译文元素被误隐藏（实际已打开）。现在强制保持可见；新增本地回归测试页 `tests/fixtures/webcomponents.html`
 - **点击工具栏图标没有反应**：在插件设置页、`chrome://` 页面、新标签页等不能嵌入侧面板的页面上点击图标，之前什么都不会发生。现在这些页面会提前设为弹窗模式，点击后直接弹出面板；普通网页仍是滑出侧面板。个别禁止注入的网页（如 Chrome 应用商店）改为打开一个独立小窗口显示面板
 - **本地运行时支付完成后无法返回**：本地 Edge Functions 拿到的是容器内地址，支付返回页会指向浏览器打不开的 `http://kong:8000`；新增可选配置 `PUBLIC_SUPABASE_URL`，本地设为 `http://127.0.0.1:54321`
@@ -45,6 +58,12 @@
 
 ### 测试
 
+- **会员分档真实联调通过**：本地 Supabase + Stripe 沙盒上，从方案页开通 Premium+ 月付、webhook 同步等级、经后端用 DeepSeek 和 DeepL 真实翻译、`usage_monthly` 记录用量、生词同步到云端与删除同步、到期取消；`tests/e2e_local_billing.py` 共 22 项
+- `tests/e2e_account.py` 改为分档流程：方案页三张卡片、月付 / 年付价格、对比表与常见问题、开通 Premium+、支付返回刷新、用量卡片、Premium 升级改走客户门户、Premium 入口与账户行显示（共 40 项）
+- `tests/e2e.py` 改为模拟后端翻译代理：未登录使用会员引擎的提示、已移除的“自定义”引擎被拒绝、整页 11 段只发一次后端请求并带登录令牌、用量写回账户（共 15 项）
+- `tests/e2e_real.py` 新增引擎等级标注、免费版选择 DeepL 打开方案页的检查（共 55 项）
+- 新增后端单元测试 `supabase/functions/_shared/translate_test.ts`：引擎等级、用量上限、请求大小、批量打包与解析；后端单元测试共 19 项
+- 删除 `tests/e2e_engines.py` 与 `tests/env.example`：引擎不再在浏览器中配置 Key，改由真实联调测试经后端验证
 - **真实联调通过**：在本地 Supabase 与 Stripe 沙盒（GLIMMER 沙盒）上跑通注册、邮箱验证、登录、付款、webhook 同步、变为 Pro、到期取消；行级权限经真实数据库验证，用户无法把自己改成 Pro、无法伪造订阅
 - 新增 `tests/e2e_local_billing.py`：真实联调测试 15 项；Stripe 支付页与客户门户加载过慢时，自动改用 Stripe API 完成同样的付款与取消
 - `tests/e2e_account.py` 新增“开发版自动连接本地后端”检查，以及登录 / 注册新页面、Google 未开启提示、游客使用的检查（共 29 项）；`tests/e2e_real.py` 新增内置页面提前设为弹窗、版本显示与刷新提示（共 51 项）
@@ -55,6 +74,11 @@
 
 ### 其他
 
+- 数据库迁移 `20261119000000_tiers_usage_words.sql`：会员等级改为 `free` / `premium` / `premium_plus`（旧的 `pro` 迁移为 `premium_plus`）、`is_member` 函数、`usage_monthly` 用量表与原子累加函数 `add_usage`、`words` 生词云同步表（只有会员可读写）
+- 新增 Edge Function `translate`（翻译代理）：校验登录、会员等级、Premium+ 每月 Token 额度（`TOKEN_LIMIT_MONTHLY`，默认 2000 万）、单次大小，调用服务商并记录用量；`billing-checkout` 按方案选择价格，已是会员时返回 `use_portal`
+- 新环境变量：`STRIPE_PRICE_PREMIUM_YEARLY`、`STRIPE_PRICE_PLUS_MONTHLY`、`STRIPE_PRICE_PLUS_YEARLY`，以及服务商 Key `DEEPL_API_KEY`、`AZURE_TRANSLATOR_KEY` / `AZURE_TRANSLATOR_REGION`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`（可选 `*_MODEL`）
+- `scripts/setup_stripe.py` 改为创建两个产品（Premium、Premium+）、三个价格与支持切换方案的客户门户配置
+- 扩展移除浏览器内的大模型与机器翻译请求代码（`engines/llm.js`）、“AI 翻译设置”（提示词、temperature）与“自定义”引擎；安装或更新时清除旧版本保存的 API Key
 - 新增 `scripts/write_build_info.sh`：把当前提交编号与时间写入 `build.json`（已被 git 忽略）；可选的 `scripts/install-hooks.sh` 安装 git 钩子，在提交、合并、切换分支后自动更新
 - 新增 `supabase/` 后端代码：数据库迁移（含行级权限）、4 个 Edge Functions；新增 `src/shared/config.js` 填写 Supabase 地址
 - 扩展新增 `scripting` 权限，用于给已打开的网页补装翻译功能；新增 `identity` 权限，用于 Google 登录
@@ -62,6 +86,7 @@
 
 ### 文档
 
+- 会员分档同步到全部文档：配置指南改为“翻译引擎与会员等级”和会员方案表；后端部署指南新增翻译代理、三个价格、服务商 Key 与用量额度的配置和常见问题；本地运行指南更新 Stripe 产品与 `.env`；架构设计说明新增“适配层与翻译代理”图、用量计数、`usage_monthly` 与 `words` 数据表、分档相关决策与安全说明；开发指南改写“新增翻译引擎”步骤与消息协议；界面术语表新增 Premium 入口、用量卡片、等级标签与“Premium 方案页”一节；测试指南、FAQ、README 同步
 - 新增本地运行指南 `docs/local-dev.md`：三种运行方式（只运行扩展、运行测试、本地完整后端），本地 Supabase 与 Stripe 测试模式的逐步配置、3 个终端分工、测试卡跑通流程、常见问题；README、开发指南、后端部署指南加入入口
 - 新增后端部署指南 `docs/backend.md`：Supabase 与 Stripe 的配置步骤、密钥设置、函数部署、测试卡跑通流程、上线前检查、常见问题
 - 架构设计说明新增“后端与账户”一节；配置、开发、测试、FAQ、界面术语表同步更新；更正“扩展没有服务器”的旧说法

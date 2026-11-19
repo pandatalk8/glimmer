@@ -1,21 +1,23 @@
-import { getSettings, saveSettings, ENGINES } from '../shared/settings.js';
+import { getSettings, saveSettings, ENGINES, FREE_WORD_LIMIT, PLAN_RANK } from '../shared/settings.js';
 import { LANGUAGES } from '../shared/languages.js';
-import { google, microsoft, deepl } from './engines/mt.js';
-import { llmTranslate } from './engines/llm.js';
+import { google } from './engines/mt.js';
 import { cacheGetMany, cacheSetMany, cacheClear } from './cache.js';
 import * as account from './account.js';
 
 account.watchBillingReturn();
+account.watchWordSync();
 
-const MT = { google, microsoft, deepl };
+// 旧版本在设置中保存的 API Key、模型与提示词已不再使用：安装或刷新插件时从存储中清除
+chrome.runtime.onInstalled.addListener(() => saveSettings({}).catch(() => {}));
 
+// Google 在浏览器中直接调用（免费）；其余引擎全部经由微光翻译后端，按会员等级开放
 async function runEngine(engineId, texts, opts) {
-  if (MT[engineId]) return MT[engineId](texts, opts);
-  return llmTranslate(engineId, texts, opts);
+  if (engineId === 'google') return google(texts, opts);
+  return account.backendTranslate({ engine: engineId, texts, from: opts.from, to: opts.to });
 }
 
-function cacheKey(engineId, cfg, from, to, text) {
-  return [engineId, cfg?.model || '', from || 'auto', to, text].join('\u0001');
+function cacheKey(engineId, from, to, text) {
+  return [engineId, '', from || 'auto', to, text].join('\u0001');
 }
 
 // 主翻译入口：去重 + 缓存 + 调用引擎
@@ -24,23 +26,23 @@ async function translate({ texts, from, to, engine, noCache }) {
   const engineId = engine || settings.engine;
   const target = to || settings.targetLang;
   const source = from || settings.sourceLang;
-  const cfg = settings.engines[engineId] || {};
   if (!ENGINES.some((e) => e.id === engineId)) throw new Error('未知翻译引擎：' + engineId);
 
-  const keys = texts.map((t) => cacheKey(engineId, cfg, source, target, t));
+  const keys = texts.map((t) => cacheKey(engineId, source, target, t));
   const cached = noCache ? texts.map(() => undefined) : await cacheGetMany(keys);
   const missing = [...new Set(texts.filter((_, i) => cached[i] === undefined))];
 
   const fresh = new Map();
   if (missing.length) {
-    const res = await runEngine(engineId, missing, { from: source, to: target, cfg, settings });
+    const res = await runEngine(engineId, missing, { from: source, to: target });
     missing.forEach((t, i) => fresh.set(t, res[i]));
-    cacheSetMany(missing.map((t) => [cacheKey(engineId, cfg, source, target, t), fresh.get(t)]));
+    cacheSetMany(missing.map((t) => [cacheKey(engineId, source, target, t), fresh.get(t)]));
   }
   return texts.map((t, i) => cached[i] ?? fresh.get(t) ?? '');
 }
 
 // ---------- 生词本：chrome.storage.local 的 words 数组，最新在前 ----------
+// 每项 { w, t, url, ts, m, u }：u 为最后修改时间，用于云同步合并；删除记入 wordsTombstones
 const MAX_WORDS = 5000;
 const wordKey = (w) => w.trim().toLowerCase();
 
@@ -52,12 +54,21 @@ async function toggleWord({ word, trans, url }) {
   const words = await getWords();
   const key = wordKey(word);
   const i = words.findIndex((w) => wordKey(w.w) === key);
+  const now = Date.now();
   if (i >= 0) {
     words.splice(i, 1);
+    await account.markWordDeleted(key, now);
     await chrome.storage.local.set({ words });
     return { saved: false, count: words.length };
   }
-  words.unshift({ w: word.trim(), t: trans || '', url: url || '', ts: Date.now() });
+  // 免费版生词本上限
+  const plan = (await chrome.storage.local.get('account')).account?.plan || 'free';
+  if (PLAN_RANK[plan] < PLAN_RANK.premium && words.length >= FREE_WORD_LIMIT) {
+    const e = new Error(`免费版生词本最多 ${FREE_WORD_LIMIT} 个，升级 Premium 不限数量`);
+    e.code = 'upgrade';
+    throw e;
+  }
+  words.unshift({ w: word.trim(), t: trans || '', url: url || '', ts: now, m: false, u: now });
   if (words.length > MAX_WORDS) words.length = MAX_WORDS;
   await chrome.storage.local.set({ words });
   return { saved: true, count: words.length };
@@ -130,7 +141,7 @@ async function ensureContent(tabId) {
 const BUILD_FILES = [
   'build.json', 'manifest.json',
   'src/background/index.js', 'src/background/account.js', 'src/background/cache.js',
-  'src/background/engines/mt.js', 'src/background/engines/llm.js', 'src/background/engines/util.js',
+  'src/background/engines/mt.js', 'src/background/engines/util.js',
   'src/content/content.js', 'src/content/content.css', 'src/content/ui.css',
   'src/content/youtube.js', 'src/content/yt-hook.js',
   'src/shared/settings.js', 'src/shared/languages.js', 'src/shared/config.js', 'src/shared/build.js',

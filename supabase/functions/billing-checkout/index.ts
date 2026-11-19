@@ -1,7 +1,14 @@
 // 创建 Stripe Checkout 订阅支付页，返回跳转地址
-// POST { interval: 'month' | 'year' }，需要登录（Authorization: Bearer <access_token>）
-import { corsHeaders, env, json, publicUrl } from '../_shared/http.ts';
-import { adminClient, stripeClient, userFromRequest } from '../_shared/clients.ts';
+// POST { plan: 'premium' | 'premium_plus', interval: 'month' | 'year' }，需要登录（Authorization: Bearer <access_token>）
+// Premium 只有年付；Premium+ 有月付与年付。已是会员时返回 code=use_portal，由客户端打开客户门户升级 / 切换方案。
+import { corsHeaders, json, publicUrl } from '../_shared/http.ts';
+import { adminClient, prices, stripeClient, userFromRequest } from '../_shared/clients.ts';
+
+export function priceFor(plan: string, interval: string, p = prices()): string | null {
+  if (plan === 'premium') return p.premiumYearly || null; // 仅年付
+  if (plan === 'premium_plus') return (interval === 'month' ? p.plusMonthly : p.plusYearly) || null;
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -11,8 +18,9 @@ Deno.serve(async (req) => {
     const user = await userFromRequest(req);
     if (!user) return json({ error: '请先登录' }, 401);
 
-    const { interval = 'month' } = await req.json().catch(() => ({}));
-    const price = interval === 'year' ? env('STRIPE_PRICE_YEARLY') : env('STRIPE_PRICE_MONTHLY');
+    const { plan = 'premium_plus', interval = 'year' } = await req.json().catch(() => ({}));
+    const price = priceFor(plan, interval);
+    if (!price) return json({ error: '该方案尚未配置价格（缺少 STRIPE_PRICE_* 环境变量）' }, 500);
 
     const db = adminClient();
     const stripe = stripeClient();
@@ -22,7 +30,9 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .single();
     if (error) throw error;
-    if (profile.plan === 'pro') return json({ error: '你已经是 Pro 会员，可在“管理订阅”中修改方案' }, 409);
+    if (profile.plan !== 'free') {
+      return json({ error: '你已经是会员，请在“管理订阅”中升级或切换方案', code: 'use_portal' }, 409);
+    }
 
     // 每个用户对应一个 Stripe customer，首次订阅时创建
     let customer = profile.stripe_customer_id as string | null;
@@ -39,7 +49,7 @@ Deno.serve(async (req) => {
       customer,
       client_reference_id: user.id,
       line_items: [{ price, quantity: 1 }],
-      subscription_data: { metadata: { user_id: user.id } },
+      subscription_data: { metadata: { user_id: user.id, plan } },
       allow_promotion_codes: true,
       success_url: `${returnUrl}?status=success`,
       cancel_url: `${returnUrl}?status=cancel`,

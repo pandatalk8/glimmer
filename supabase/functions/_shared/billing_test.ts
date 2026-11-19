@@ -1,7 +1,9 @@
 // 运行：deno test supabase/functions/
 import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.13';
 import Stripe from 'npm:stripe@17.7.0';
-import { type BillingDeps, handleEvent, planFromStatus, periodEnd, type StripeSubscriptionLike } from './billing.ts';
+import { type BillingDeps, handleEvent, planFor, priceMap, periodEnd, type StripeSubscriptionLike } from './billing.ts';
+
+const PRICES = { premiumYearly: 'price_premium_year', plusMonthly: 'price_plus_month', plusYearly: 'price_plus_year' };
 
 // 内存版数据库
 function fakeDeps(subs: Record<string, StripeSubscriptionLike> = {}) {
@@ -14,6 +16,7 @@ function fakeDeps(subs: Record<string, StripeSubscriptionLike> = {}) {
     updateProfile: async (id, patch) => void profiles.set(id, { ...profiles.get(id), ...patch }),
     upsertSubscription: async (row) => void subscriptions.set(row.id, { ...row }),
     retrieveSubscription: async (id) => subs[id],
+    planForPrice: priceMap(PRICES),
   };
   return { deps, profiles, subscriptions, events };
 }
@@ -23,17 +26,21 @@ const sub = (over: Partial<StripeSubscriptionLike> = {}): StripeSubscriptionLike
   customer: 'cus_1',
   status: 'active',
   cancel_at_period_end: false,
-  items: { data: [{ current_period_end: 1798761600, price: { id: 'price_month', recurring: { interval: 'month' } } }] },
+  items: { data: [{ current_period_end: 1798761600, price: { id: 'price_plus_month', recurring: { interval: 'month' } } }] },
   ...over,
 });
 
-Deno.test('订阅状态映射为套餐', () => {
-  assertEquals(planFromStatus('active'), 'pro');
-  assertEquals(planFromStatus('trialing'), 'pro');
-  assertEquals(planFromStatus('past_due'), 'pro'); // 宽限期
-  assertEquals(planFromStatus('canceled'), 'free');
-  assertEquals(planFromStatus('incomplete'), 'free');
-  assertEquals(planFromStatus(undefined), 'free');
+Deno.test('订阅状态 + 价格映射为会员等级', () => {
+  const map = priceMap(PRICES);
+  assertEquals(planFor('active', 'price_premium_year', map), 'premium');
+  assertEquals(planFor('active', 'price_plus_month', map), 'premium_plus');
+  assertEquals(planFor('active', 'price_plus_year', map), 'premium_plus');
+  assertEquals(planFor('trialing', 'price_premium_year', map), 'premium');
+  assertEquals(planFor('past_due', 'price_plus_year', map), 'premium_plus'); // 宽限期
+  assertEquals(planFor('active', 'price_old_pro', map), 'premium_plus'); // 旧版 Pro 价格不降级
+  assertEquals(planFor('canceled', 'price_plus_year', map), 'free');
+  assertEquals(planFor('incomplete', 'price_premium_year', map), 'free');
+  assertEquals(planFor(undefined, null, map), 'free');
 });
 
 Deno.test('兼容新旧 API 的 current_period_end 位置', () => {
@@ -41,7 +48,7 @@ Deno.test('兼容新旧 API 的 current_period_end 位置', () => {
   assertEquals(periodEnd(sub({ current_period_end: 1700000000 })), 1700000000);
 });
 
-Deno.test('支付完成：开通 Pro，写入订阅', async () => {
+Deno.test('支付完成：开通 Premium+，写入订阅', async () => {
   const { deps, profiles, subscriptions } = fakeDeps({ sub_1: sub() });
   const r = await handleEvent(
     { id: 'evt_1', type: 'checkout.session.completed', data: { object: { mode: 'subscription', subscription: 'sub_1', client_reference_id: 'user-1' } } },
@@ -49,16 +56,23 @@ Deno.test('支付完成：开通 Pro，写入订阅', async () => {
   );
   assertEquals(r, 'synced user-1');
   const p = profiles.get('user-1')!;
-  assertEquals(p.plan, 'pro');
+  assertEquals(p.plan, 'premium_plus');
   assertEquals(p.subscription_status, 'active');
   assertEquals(p.current_period_end, '2027-01-01T00:00:00.000Z');
   assertEquals(subscriptions.get('sub_1')!.billing_interval, 'month');
 });
 
-Deno.test('设置到期取消：仍为 Pro，标记 cancel_at_period_end', async () => {
+Deno.test('Premium 年付：等级为 premium', async () => {
+  const { deps, profiles } = fakeDeps();
+  const premium = sub({ items: { data: [{ current_period_end: 1798761600, price: { id: 'price_premium_year', recurring: { interval: 'year' } } }] } });
+  await handleEvent({ id: 'evt_p', type: 'customer.subscription.created', data: { object: { ...premium } } }, deps);
+  assertEquals(profiles.get('user-1')!.plan, 'premium');
+});
+
+Deno.test('设置到期取消：仍为会员，标记 cancel_at_period_end', async () => {
   const { deps, profiles } = fakeDeps();
   await handleEvent({ id: 'evt_2', type: 'customer.subscription.updated', data: { object: { ...sub({ cancel_at_period_end: true }) } } }, deps);
-  assertEquals(profiles.get('user-1')!.plan, 'pro');
+  assertEquals(profiles.get('user-1')!.plan, 'premium_plus');
   assertEquals(profiles.get('user-1')!.cancel_at_period_end, true);
 });
 

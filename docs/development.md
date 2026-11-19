@@ -37,13 +37,15 @@
 ┌───────────────▼─────────────────────────────┐
 │ background/index.js（Service Worker）         │
 │   消息路由 → 去重 → cache.js(IndexedDB)        │
-│            → engines/mt.js | engines/llm.js   │
-└───────────────┬─────────────────────────────┘
-                │ fetch（host_permissions 免 CORS）
-         Google / Azure / DeepL / 各家大模型 API
+│            → engines/mt.js（Google）          │
+│            → account.js → 后端翻译代理（会员引擎）│
+└───────┬─────────────────────────┬───────────┘
+        │ fetch（免 CORS）          │ 带登录令牌
+   Google 翻译            Supabase Edge Function translate
+                           → DeepL / Azure / 各家大模型 API
 ```
 
-所有网络请求都在 Service Worker 中发出，内容脚本只负责 DOM。这样做有两个好处：API Key 不会暴露给网页，扩展的 `host_permissions` 也让请求不受网页 CORS 限制。
+所有网络请求都在 Service Worker 中发出，内容脚本只负责 DOM。登录令牌不会暴露给网页，扩展的 `host_permissions` 也让请求不受网页 CORS 限制。扩展里没有任何服务商 API Key：Google 免费直连，其余引擎的 Key 只在后端。
 
 ### 消息协议
 
@@ -51,7 +53,7 @@
 
 | type | 参数 | 返回 |
 | --- | --- | --- |
-| `translate` | `texts: string[]`，可选 `to`、`from`、`engine`、`noCache` | `string[]`，与输入一一对应 |
+| `translate` | `texts: string[]`，可选 `to`、`from`、`engine`、`noCache` | `string[]`，与输入一一对应；会员引擎未登录、等级不够、用量用完时返回中文错误 |
 | `getSettings` | — | 合并默认值后的完整设置 |
 | `saveSettings` | `patch`（部分设置，深合并） | 新设置 |
 | `meta` | — | `{ engines, languages }` |
@@ -59,14 +61,14 @@
 | `clearCache` | — | `true` |
 | `openOptions` | — | — |
 | `tabInfo` | — | 发送方所在标签页 `{ id, url }`；面板以抽屉形式运行时用它找到自己所在的网页 |
-| `toggleWord` | `word`、`trans`、`url` | `{ saved, count }`，已收藏则取消，未收藏则加入生词本 |
+| `toggleWord` | `word`、`trans`、`url` | `{ saved, count }`，已收藏则取消，未收藏则加入生词本；免费版满 100 个时报错（`code: 'upgrade'`） |
 | `hasWord` | `word` | `boolean` |
 | `accountState` | — | `{ configured, loggedIn, email, account }`，读本地缓存 |
 | `accountRefresh` | — | 从数据库刷新会员状态后返回同上 |
 | `accountSignUp` / `accountSignIn` | `email`、`password` | 注册返回 `{ needConfirm }`；登录返回 `{ account }` |
 | `accountSignOut` | — | 退出并清除本地会话 |
 | `accountReset` | `email` | 发送重置密码邮件 |
-| `billingCheckout` | `interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页 |
+| `billingCheckout` | `plan: 'premium' \| 'premium_plus'`、`interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页；已是会员时改为打开客户门户，返回 `{ opened: 'portal' }` |
 | `billingPortal` | — | 在新标签页打开 Stripe 客户门户 |
 
 后台发给内容脚本（`chrome.tabs.sendMessage`）：
@@ -135,7 +137,11 @@
 chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: '...' } })
 ```
 
-后端代码在 `supabase/`，部署步骤见 [后端部署指南](backend.md)。新增需要 Pro 的功能时，在后台用 `account.isPro()` 判断；如果功能消耗服务端资源，还要在 Edge Function 中根据 `profiles.plan` 校验。
+后端代码在 `supabase/`，部署步骤见 [后端部署指南](backend.md)。
+
+**会员等级。** `src/shared/settings.js` 导出 `PLAN_RANK`（free 0 / premium 1 / premium_plus 2）、`PLAN_NAME`、`FREE_WORD_LIMIT`（100）和 `canUse(plan, engine)`，面板、设置页、方案页都用它们决定标注和是否打开方案页。这只是界面提示；真正的限制在后端（`translate` 函数的 `checkAccess`、`words` 表的 RLS）。新增会员功能时两边都要改。
+
+**Premium 方案页。** `premium/premium.html` 是独立的扩展页面，从面板首页右上角的“Premium”标签或账户页“查看会员方案”打开。价格常量在 `premium.js` 的 `PRICE`，需与 Stripe 价格一致。未登录时点“开通”会弹出内嵌的登录页（`panel.html?view=account`），登录后自动继续所选方案。
 
 ### 侧边面板
 
@@ -162,59 +168,39 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 
 ## 四、新增一个翻译引擎
 
-以接入一个假想的 `foo` 引擎为例。
+会员引擎都在后端实现，以接入一个假想的 `foo` 机器翻译为例（需要 Premium）。
 
 **第一步，在 `src/shared/settings.js` 注册。**
 
 ```js
-// ENGINES 数组中加一项
-{ id: 'foo', name: 'Foo 翻译', type: 'mt', needKey: true },
-
-// DEFAULT_SETTINGS.engines 中加默认配置
-foo: { apiKey: '' },
+// ENGINES 数组中加一项；tier 为 'free' | 'premium' | 'premium_plus'
+{ id: 'foo', name: 'Foo 翻译', type: 'mt', tier: 'premium' },
 ```
 
-`type` 决定设置页的标签，`free: true` 显示“免费”，`needKey: true` 时面板的引擎列表会标注“需 API Key”。
+面板引擎列表、设置页卡片、方案页的等级标注都读这里。
 
-**第二步，实现翻译函数。** 机器翻译放在 `src/background/engines/mt.js`：
+**第二步，在后端 `supabase/functions/_shared/translate.ts` 实现。**
 
-```js
-export async function foo(texts, { from, to, cfg }) {
-  if (!cfg.apiKey) throw new Error('请先在设置中填写 Foo API Key');
-  const res = await fetch('https://api.foo.com/translate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.apiKey },
-    body: JSON.stringify({ q: texts, target: to }),
-  });
-  if (!res.ok) throw await httpError(res, 'Foo');
-  return (await res.json()).translations; // 必须与 texts 等长且顺序一致
+```ts
+// ENGINE_TIER 加一项，必须与扩展的 tier 一致
+export const ENGINE_TIER = { ..., foo: 'premium' };
+
+export async function fooTranslate(texts: string[], from: string, to: string): Promise<string[]> {
+  const apiKey = key('FOO_API_KEY', 'Foo'); // 缺少时返回 503“服务端尚未配置”
+  const data = await post('https://api.foo.com/translate', { Authorization: 'Bearer ' + apiKey }, { q: texts, target: to }, 'Foo');
+  return data.translations; // 必须与 texts 等长且顺序一致
 }
 ```
 
-函数约定：输入 `string[]`，输出等长的 `string[]`；`from` 可能是 `'auto'`；语言代码与 Google 一致（`zh-CN`、`en`），需要转换时在 `src/shared/languages.js` 中加映射字段。报错用 `httpError` 包装，它会把 401、429 等状态码翻译成中文提示。
+然后在 `supabase/functions/translate/index.ts` 的分支中调用它。大模型不用写请求代码：OpenAI 兼容接口在 `chatFor` 中加一项，复用 `openaiCompatible`，Token 数自动计入用量。
 
-如果是 OpenAI 兼容的大模型，不需要写请求代码，只要在 `llm.js` 的 `CHAT` 表里加一项，复用 `openaiChat` 即可。
+函数约定：输入 `string[]`，输出等长的 `string[]`；`from` 可能是 `'auto'`；语言代码与 Google 一致（`zh-CN`、`en`），需要转换时在 `src/shared/languages.js` 中加映射字段（后端复用同一张表）。
 
-**第三步，在 `src/background/index.js` 路由。** 机器翻译引擎加到 `MT` 对象：
+**第三步，设置服务端 Key 并补测试。** 本地写入 `supabase/functions/.env`，云端 `npx supabase secrets set FOO_API_KEY=...`；在 `supabase/functions/_shared/translate_test.ts` 中补充等级检查的用例。
 
-```js
-const MT = { google, microsoft, deepl, foo };
-```
+**第四步，界面文案。** `options/options.js` 的 `ENGINE_UI` 加卡片描述（只有 `logo`、`color`、`desc`，没有输入框），方案页 `premium.js` 的功能列表与对比表加上该引擎。
 
-大模型引擎不用改，未在 `MT` 中的引擎默认走 `llmTranslate`。
-
-**第四步，在 `options/options.js` 的 `ENGINE_UI` 中描述设置卡片。**
-
-```js
-foo: {
-  logo: 'F', color: '#ff6a00', desc: '一句话介绍。',
-  fields: [{ k: 'apiKey', label: 'API Key', secret: true, ph: 'foo-...' }],
-},
-```
-
-`fields` 中的 `k` 对应 `engines.foo` 下的字段名，`secret` 显示为密码框，`list` 提供下拉建议。
-
-**第五步，** 如果 API 域名特殊，确认 `manifest.json` 的 `host_permissions` 覆盖它（当前为 `<all_urls>`，无需修改）。
+扩展的 `background/index.js` 不用改：除 `google` 以外的引擎都经 `account.backendTranslate` 转给后端。
 
 ---
 
@@ -223,6 +209,7 @@ foo: {
 | 要调试的部分 | 打开方式 |
 | --- | --- |
 | 后台 / 引擎请求 | `chrome://extensions` → 本扩展 → “Service Worker” 链接，打开 DevTools 看 Network 和 Console |
+| 翻译代理 | 运行 `npx supabase functions serve` 的终端输出；云端在 Supabase 后台 Edge Functions → translate → Logs |
 | 内容脚本 | 网页 DevTools → Console 顶部上下文下拉框选择“微光翻译”，即可访问 `window.__glimmer` |
 | 面板（弹窗） | 右键扩展图标 → “审查弹出内容” |
 | 面板（抽屉） | 网页 DevTools → Console 上下文下拉框选择 `panel.html` |
@@ -259,8 +246,8 @@ await sw.evaluate("""async()=>{const [t]=await chrome.tabs.query({active:true});
 | 仅译文模式 | 原文隐藏，段落间距和列表符号正常 |
 | 关闭翻译 | `document.querySelectorAll('gl-trans').length === 0` |
 | 划词 | 选中文本后出现 `.sel-icon`，点击后面板显示译文 |
-| 大模型批量 | 用本地 mock 的 `/v1/chat/completions` 服务，确认多段只发一次请求 |
-| 账户与订阅 | `tests/e2e_account.py` 启动模拟的 Supabase 接口，覆盖注册、登录、错误提示、令牌续期、支付返回变 Pro |
+| 会员引擎 | 用本地模拟的 `/functions/v1/translate`，确认整页只发一次请求、带登录令牌、用量写回账户 |
+| 账户与订阅 | `tests/e2e_account.py` 启动模拟的 Supabase 接口，覆盖注册、登录、错误提示、令牌续期、Premium 方案页、开通 Premium+、升级改走客户门户 |
 | 后端订阅逻辑 | `deno test --allow-env --allow-net --allow-read supabase/functions/` |
 | YouTube | 用 `window.postMessage({source:'glimmer-yt', url, body})` 注入 json3 字幕，检查播放器内的 `.yt-sub` |
 
@@ -279,5 +266,5 @@ zip -r glimmer-v0.2.0.zip manifest.json src panel options styles icons -x '*.DS_
 
 1. 修改 `manifest.json` 的 `version`，并在 [`CHANGELOG.md`](../CHANGELOG.md) 中把“未发布”改为该版本号和日期（日常每次修改都要先记录到“未发布”，规则见更新日志开头）
 2. 准备 `icons/icon512.png` 作为商店图标素材，以及 1280×800 的截图
-3. 隐私说明中需声明：扩展会把网页文本发送给用户选择的翻译服务；API Key 仅存储在本地
+3. 隐私说明中需声明：扩展会把网页文本发送给用户选择的翻译服务，会员引擎的文本经我们的服务器转发（不保存）；会收集邮箱用于登录
 4. `<all_urls>` 权限审核较严，需在说明中解释“需要在任意网页上翻译内容”

@@ -14,7 +14,6 @@
       <nav id="nav">
         <a href="#general" data-sec="general">基本设置</a>
         <a href="#engines" data-sec="engines">翻译服务</a>
-        <a href="#ai" data-sec="ai">AI 翻译设置</a>
         <a href="#style" data-sec="style">译文样式</a>
         <a href="#interact" data-sec="interact">划词与悬停</a>
         <a href="#video" data-sec="video">视频字幕</a>
@@ -51,25 +50,8 @@
       <!-- 翻译服务 -->
       <section id="engines" class="sec">
         <h1>翻译服务</h1>
-        <p class="sub">Google 翻译开箱即用；Microsoft、DeepL 与大模型需填写你自己的 API Key，Key 只保存在本地浏览器中。</p>
+        <p class="sub">Google 翻译免费使用；DeepL、Microsoft 需要 Premium 会员，GPT、Gemini、DeepSeek、Claude 需要 Premium+ 会员。付费引擎均由微光翻译服务器提供，无需也不能填写 API Key。<a href="../premium/premium.html" target="_blank">查看会员方案</a></p>
         <div id="engineCards" class="engine-grid"></div>
-      </section>
-
-      <!-- AI 设置 -->
-      <section id="ai" class="sec">
-        <h1>AI 翻译设置</h1>
-        <p class="sub">作用于 GPT、Gemini、DeepSeek、Claude 和自定义模型。<code>{{to}}</code> 会被替换为目标语言。</p>
-        <div class="card form">
-          <div class="field col">
-            <label>系统提示词（Prompt）</label>
-            <textarea data-path="llm.prompt" rows="5"></textarea>
-            <button class="ghost small" id="resetPrompt">恢复默认</button>
-          </div>
-          <div class="field">
-            <label>Temperature <span class="hint">越低越稳定</span></label>
-            <input type="number" min="0" max="2" step="0.1" data-path="llm.temperature" data-type="number" style="width: 100px" />
-          </div>
-        </div>
       </section>
 
       <!-- 译文样式 -->

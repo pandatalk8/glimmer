@@ -110,6 +110,7 @@ async function call(path, { method = 'GET', body, token, headers = {} } = {}) {
     const msg = data?.error_description || data?.msg || data?.message || data?.error || text;
     const err = new Error(friendly(String(msg || ''), res.status));
     err.status = res.status;
+    err.code = data?.code; // 后端返回的错误类型：login / upgrade / quota …
     throw err;
   }
   return data;
@@ -234,9 +235,12 @@ export async function refreshAccount() {
     { token }
   );
   const p = rows?.[0] || {};
+  const month = new Date().toISOString().slice(0, 7);
+  const usageRows = await call(`/rest/v1/usage_monthly?month=eq.${month}&select=tokens,chars`, { token }).catch(() => []);
   const account = {
     email: p.email || auth.user.email,
-    plan: p.plan === 'pro' ? 'pro' : 'free',
+    plan: ['premium', 'premium_plus'].includes(p.plan) ? p.plan : 'free',
+    usage: { tokens: Number(usageRows?.[0]?.tokens || 0), chars: Number(usageRows?.[0]?.chars || 0), limit: TOKEN_LIMIT, month },
     status: p.subscription_status || null,
     periodEnd: p.current_period_end || null,
     cancelAtPeriodEnd: !!p.cancel_at_period_end,
@@ -244,7 +248,122 @@ export async function refreshAccount() {
     updatedAt: Date.now(),
   };
   await chrome.storage.local.set({ [ACCOUNT_KEY]: account });
+  if (isMember(account.plan)) syncWords().catch(() => {}); // 登录或续费后拉取云端生词本
   return account;
+}
+
+// ---------- 后端翻译 ----------
+const TOKEN_LIMIT = 20_000_000; // Premium+ 每月 Token（与后端 TOKEN_LIMIT_MONTHLY 一致，仅用于显示）
+const ENGINE_NAME = { deepl: 'DeepL', microsoft: 'Microsoft 翻译', openai: 'OpenAI GPT', gemini: 'Google Gemini', deepseek: 'DeepSeek', claude: 'Claude' };
+const isMember = (plan) => plan === 'premium' || plan === 'premium_plus';
+
+/** DeepL、Microsoft 与全部大模型：由后端调用，校验会员等级与本月用量 */
+export async function backendTranslate({ engine, texts, from, to }) {
+  const name = ENGINE_NAME[engine] || engine;
+  const token = await getToken().catch(() => null);
+  if (!token) {
+    const e = new Error(`${name} 需要登录并开通会员后使用`);
+    e.code = 'login';
+    throw e;
+  }
+  // 后端单次最多 100 段 / 2 万字符；按 50 段 / 1 万字符分批，避免长字幕等大请求被拒
+  const chunks = [];
+  let cur = [];
+  let size = 0;
+  for (const t of texts) {
+    if (cur.length && (cur.length >= 50 || size + t.length > 10000)) {
+      chunks.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(t);
+    size += t.length;
+  }
+  if (cur.length) chunks.push(cur);
+  const out = [];
+  let usage = null;
+  for (const part of chunks) {
+    const data = await call('/functions/v1/translate', { method: 'POST', token, body: { engine, texts: part, from, to } });
+    out.push(...data.translations);
+    if (data?.usage) usage = data.usage;
+  }
+  if (usage) {
+    const { account } = await chrome.storage.local.get(ACCOUNT_KEY);
+    if (account) await chrome.storage.local.set({ [ACCOUNT_KEY]: { ...account, usage: { ...account.usage, ...usage } } });
+  }
+  return out;
+}
+
+// ---------- 生词本云同步（会员功能） ----------
+// 本地 words 每项带 u（最后修改时间）；删除记入 wordsTombstones { key: 删除时间 }。
+// 与云端 words 表逐词比较 updated_at，较新者为准；删除以墓碑同步到其他设备。
+const keyOf = (w) => String(w).trim().toLowerCase();
+let lastSynced = '';
+
+export async function markWordDeleted(key, ts = Date.now()) {
+  const { wordsTombstones = {} } = await chrome.storage.local.get('wordsTombstones');
+  wordsTombstones[key] = ts;
+  await chrome.storage.local.set({ wordsTombstones });
+}
+
+export async function syncWords() {
+  const { [ACCOUNT_KEY]: account } = await chrome.storage.local.get(ACCOUNT_KEY);
+  if (!isMember(account?.plan)) return { skipped: true };
+  const token = await getToken();
+  if (!token) return { skipped: true };
+  const auth = await getAuth();
+  const remote = (await call('/rest/v1/words?select=key,w,t,url,ts,m,deleted,updated_at&limit=10000', { token })) || [];
+  const { words = [], wordsTombstones = {} } = await chrome.storage.local.get(['words', 'wordsTombstones']);
+
+  const local = new Map();
+  for (const w of words) {
+    local.set(keyOf(w.w), { key: keyOf(w.w), w: w.w, t: w.t || '', url: w.url || '', ts: w.ts || 0, m: !!w.m, deleted: false, updated_at: w.u || w.ts || 0 });
+  }
+  for (const [k, ts] of Object.entries(wordsTombstones)) {
+    const cur = local.get(k);
+    if (!cur || ts >= cur.updated_at) local.set(k, { key: k, w: cur?.w || k, t: '', url: '', ts: cur?.ts || 0, m: false, deleted: true, updated_at: ts });
+  }
+  const merged = new Map(local);
+  const push = [];
+  const remoteMap = new Map(remote.map((r) => [r.key, { ...r, updated_at: Number(r.updated_at), ts: Number(r.ts) }]));
+  for (const [k, l] of local) {
+    const r = remoteMap.get(k);
+    if (!r || l.updated_at > r.updated_at) push.push({ ...l, user_id: auth.user.id });
+  }
+  for (const [k, r] of remoteMap) {
+    const l = local.get(k);
+    if (!l || r.updated_at > l.updated_at) merged.set(k, r);
+  }
+  for (let i = 0; i < push.length; i += 500) {
+    await call('/rest/v1/words?on_conflict=user_id,key', {
+      method: 'POST',
+      token,
+      body: push.slice(i, i + 500),
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    });
+  }
+  const next = [...merged.values()]
+    .filter((x) => !x.deleted)
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 5000)
+    .map((x) => ({ w: x.w, t: x.t, url: x.url, ts: x.ts, m: !!x.m, u: x.updated_at }));
+  lastSynced = JSON.stringify([next, {}]);
+  await chrome.storage.local.set({ words: next, wordsTombstones: {}, wordsSyncedAt: Date.now() });
+  return { pushed: push.length, total: next.length };
+}
+
+/** 生词变化后 2 秒自动同步；同步自身写入的变化不再触发 */
+export function watchWordSync() {
+  let timer = 0;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || (!changes.words && !changes.wordsTombstones)) return;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const { words = [], wordsTombstones = {} } = await chrome.storage.local.get(['words', 'wordsTombstones']);
+      if (JSON.stringify([words, wordsTombstones]) === lastSynced) return;
+      syncWords().catch(() => {});
+    }, 2000);
+  });
 }
 
 export async function accountState() {
@@ -252,12 +371,6 @@ export async function accountState() {
   const auth = await getAuth();
   const { account } = await chrome.storage.local.get(ACCOUNT_KEY);
   return { configured, loggedIn: !!auth, email: auth?.user?.email || null, account: account || null, backend: await backendInfo() };
-}
-
-/** 是否为 Pro 会员（供以后需要付费的功能判断） */
-export async function isPro() {
-  const { account } = await chrome.storage.local.get(ACCOUNT_KEY);
-  return account?.plan === 'pro';
 }
 
 async function openBilling(fn, body) {
@@ -268,7 +381,17 @@ async function openBilling(fn, body) {
   return true;
 }
 
-export const checkout = ({ interval }) => openBilling('billing-checkout', { interval: interval === 'year' ? 'year' : 'month' });
+/** plan：premium（仅年付）| premium_plus（月付 / 年付）。已是会员时后端返回 use_portal，改为打开客户门户升级或切换 */
+export async function checkout({ plan = 'premium_plus', interval = 'year' }) {
+  try {
+    await openBilling('billing-checkout', { plan, interval: plan === 'premium' ? 'year' : interval === 'month' ? 'month' : 'year' });
+    return { opened: 'checkout' };
+  } catch (e) {
+    if (e.code !== 'use_portal') throw e;
+    await openPortal();
+    return { opened: 'portal' };
+  }
+}
 export const openPortal = () => openBilling('billing-portal', {});
 
 // 支付 / 管理订阅返回页打开时，webhook 可能稍晚到达，间隔刷新几次
@@ -285,7 +408,7 @@ export function watchBillingReturn() {
     for (const wait of [0, 2000, 5000, 10000]) {
       await new Promise((r) => setTimeout(r, wait));
       const a = await refreshAccount().catch(() => null);
-      if (a?.plan === 'pro' && tab.url.includes('status=success')) break;
+      if (a && a.plan !== 'free' && tab.url.includes('status=success')) break;
     }
   });
 }

@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | **一、只运行扩展** | 网页翻译、划词、字幕、生词本、侧面板，以及所有不需要账户的功能 | Chrome | 5 分钟 |
 | **二、运行自动化测试** | 验证改动没有破坏功能；账户与订阅用模拟接口测试 | Python、Playwright、Deno | 10 分钟 |
-| **三、本地完整后端** | 在本机真实地注册登录、用 Stripe 测试卡付款、变为 Pro | Docker Desktop、Stripe 账号 | 30 分钟 |
+| **三、本地完整后端** | 在本机真实地注册登录、用 Stripe 测试卡开通 Premium / Premium+、经后端使用付费引擎 | Docker Desktop、Stripe 账号 | 30 分钟 |
 
 大部分时候方式一就够了。只有要改动账户、订阅相关代码时，才需要方式三。
 
@@ -44,7 +44,7 @@ git merge --ff-only worktree-immersive-translator   # 拉入最新改动
 
 **第三步，试用。** 打开任意英文网页，点击工具栏图标滑出侧面板，打开“翻译此页面”。Google 翻译开箱即用，不需要任何配置。
 
-**第四步（可选），配置翻译引擎。** 面板 → 设置 → API Key，在完整设置页的“翻译服务”中填入 DeepL、DeepSeek 等 Key，点击“测试连接”。各家 Key 的获取方式见 [配置指南](configuration.md)。
+**第四步（可选），试用付费引擎。** DeepL、Microsoft 和大模型由后端代为请求，扩展里不填 Key。要在本机试用，需要按第三部分启动本地后端、在 `supabase/functions/.env` 中填好服务商 Key，并开通对应会员。引擎与会员等级见 [配置指南](configuration.md)。
 
 **确认加载的是最新代码：** 完整设置页 → 高级 → “当前版本”，显示如 `v0.2.0 · c59de6a · 11-19 12:00`，与项目目录中执行 `git log --oneline -1` 的提交编号一致即为最新。磁盘上的代码更新后还没刷新插件时，设置页顶部和面板首页会显示黄色的“需要刷新”提示。
 
@@ -74,13 +74,7 @@ deno test --allow-env --allow-net --allow-read supabase/functions/   # 后端订
 python3 tests/check_diagrams.py   # 文档中的图能否正常渲染
 ```
 
-用自己的 Key 测试翻译引擎：
-
-```bash
-cp tests/env.example tests/.env.local   # 已被 git 忽略
-# 编辑 tests/.env.local，只填你有的 Key
-python3 tests/e2e_engines.py
-```
+会员引擎（DeepL、大模型等）经后端翻译，要真实测试需要按下面第四部分启动本地后端，再运行 `python3 tests/e2e_local_billing.py`。
 
 每个测试都会打印“结果：N/N 通过”，截图保存在 `tests/output/`。加 `--headed` 参数可以看到浏览器的操作过程。
 
@@ -151,17 +145,18 @@ stripe login
 python3 scripts/setup_stripe.py
 ```
 
-脚本会创建产品、月付 5 美元 / 年付 48 美元两个价格、客户门户配置，并把编号写入 `.env`。可以重复执行，已存在的会直接复用。想手动创建的话，按下面两步：
+脚本会创建两个产品（Premium、Premium+）、三个价格（Premium $29 / 年；Premium+ $6 / 月、$69 / 年）、客户门户配置，并把编号写入 `.env`。可以重复执行，已存在的会直接复用。想手动创建的话，按下面两步：
 
-**第二步，创建产品和两个价格**（金额只是示例，单位为分）：
+**第二步，创建两个产品和三个价格**（单位为分）：
 
 ```bash
-stripe products create -d name="微光翻译 Pro"
-# 记下返回的 id：prod_xxx
+stripe products create -d name="微光翻译 Premium"    # 记下 prod_A
+stripe products create -d name="微光翻译 Premium+"   # 记下 prod_B
 
-stripe prices create -d product=prod_xxx -d unit_amount=500 -d currency=usd -d "recurring[interval]=month"
-stripe prices create -d product=prod_xxx -d unit_amount=4800 -d currency=usd -d "recurring[interval]=year"
-# 分别记下两个 id：price_xxx
+stripe prices create -d product=prod_A -d unit_amount=2900 -d currency=usd -d "recurring[interval]=year"
+stripe prices create -d product=prod_B -d unit_amount=600 -d currency=usd -d "recurring[interval]=month"
+stripe prices create -d product=prod_B -d unit_amount=6900 -d currency=usd -d "recurring[interval]=year"
+# 依次记下三个 id：price_xxx
 ```
 
 也可以在 Stripe 后台（右上角打开 Test mode）手动创建，效果相同。
@@ -173,7 +168,14 @@ stripe billing_portal configurations create \
   -d "features[subscription_cancel][enabled]=true" \
   -d "features[payment_method_update][enabled]=true" \
   -d "features[invoice_history][enabled]=true" \
-  -d "business_profile[headline]=微光翻译 Pro"
+  -d "features[subscription_update][enabled]=true" \
+  -d "features[subscription_update][default_allowed_updates][]=price" \
+  -d "features[subscription_update][products][0][product]=prod_A" \
+  -d "features[subscription_update][products][0][prices][]=price_premium_yearly" \
+  -d "features[subscription_update][products][1][product]=prod_B" \
+  -d "features[subscription_update][products][1][prices][]=price_plus_monthly" \
+  -d "features[subscription_update][products][1][prices][]=price_plus_yearly" \
+  -d "business_profile[headline]=微光翻译会员"
 # 记下返回的 id：bpc_xxx，填入 .env 的 STRIPE_PORTAL_CONFIGURATION
 ```
 
@@ -194,10 +196,20 @@ stripe listen --forward-to http://127.0.0.1:54321/functions/v1/stripe-webhook
 ```bash
 STRIPE_SECRET_KEY=sk_test_xxx            # stripe 后台 Developers → API keys 的 Secret key
 STRIPE_WEBHOOK_SECRET=whsec_xxx          # 上一步 stripe listen 打印的值
-STRIPE_PRICE_MONTHLY=price_xxx
-STRIPE_PRICE_YEARLY=price_xxx
+STRIPE_PRICE_PREMIUM_YEARLY=price_xxx     # Premium $29 / 年
+STRIPE_PRICE_PLUS_MONTHLY=price_xxx       # Premium+ $6 / 月
+STRIPE_PRICE_PLUS_YEARLY=price_xxx        # Premium+ $69 / 年
 PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 STRIPE_PORTAL_CONFIGURATION=bpc_xxx       # 4.3 第三步创建的客户门户配置（可选）
+
+# 翻译服务商（只填想试用的；变量说明见后端部署指南第四部分）
+DEEPL_API_KEY=xxx
+DEEPSEEK_API_KEY=sk-xxx
+# AZURE_TRANSLATOR_KEY=xxx
+# AZURE_TRANSLATOR_REGION=eastasia
+# OPENAI_API_KEY=sk-xxx
+# GEMINI_API_KEY=xxx
+# ANTHROPIC_API_KEY=sk-ant-xxx
 ```
 
 `PUBLIC_SUPABASE_URL` 只在本地需要：函数在 Docker 容器里看到的地址是 `http://kong:8000`，浏览器打不开，支付完成后的返回页必须用本机地址。`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由 CLI 自动注入，不用填。
@@ -244,15 +256,17 @@ npx supabase functions serve --env-file supabase/functions/.env
 | 1 | 账户页 → 注册，填写任意邮箱（如 `me@test.local`）和密码 | 提示“验证邮件已发送” |
 | 2 | 打开 `http://127.0.0.1:54324`，点开验证邮件中的链接 | 验证成功后会跳到 `site_url`（示例网址打不开也没关系，验证已完成） |
 | 3 | 回到面板登录 | 显示邮箱和“免费版” |
-| 4 | 点击“月付” | 新标签页打开 Stripe 测试支付页 |
+| 4 | 面板首页右上角“Premium” → 方案页切到“月付方案” → “开通 Premium+” | 新标签页打开 Stripe 测试支付页 |
 | 5 | 卡号 `4242 4242 4242 4242`，任意未来日期、任意 CVC、任意邮编，付款 | 跳到本机的“订阅成功”页面；终端 2 显示事件转发 `[200]` |
-| 6 | 回到面板 | 几秒内变为“Pro 会员”，首页标题栏出现金色 Pro |
-| 7 | 打开 Studio `http://127.0.0.1:54323` → Table Editor → `profiles` | 该用户的 `plan` 为 `pro` |
-| 8 | 账户页 → 管理订阅 → 取消订阅 → 返回 | 显示“已取消续费，Pro 有效期至……” |
+| 6 | 回到面板 | 几秒内变为“Premium+ 会员”，显示本月 AI 用量；首页右上角变为实心“Premium+” |
+| 7 | 打开 Studio `http://127.0.0.1:54323` → Table Editor → `profiles` | 该用户的 `plan` 为 `premium_plus` |
+| 8 | 设置 → 翻译引擎选 DeepSeek 或 DeepL，翻译一个网页 | 译文正常；`usage_monthly` 出现本月记录，账户页用量增加 |
+| 9 | 收藏一个生词 | 几秒后 `words` 表出现该词 |
+| 10 | 账户页 → 管理订阅 → 取消订阅 → 返回 | 显示“已取消续费，Premium+ 有效期至……” |
 
 其他测试卡：`4000 0000 0000 0341`（绑定成功、续费时扣款失败，可测试 `past_due`）、`4000 0025 0000 3155`（需要 3D 验证）。
 
-**自动跑一遍**：服务都启动后，执行 `python3 tests/e2e_local_billing.py`，会自动完成注册、邮箱验证、登录、付款、变为 Pro、到期取消，共 15 项检查。Stripe 支付页和客户门户是第三方页面，加载慢时自动化填写不稳定，脚本会改用 Stripe API 完成同样的付款与取消操作（输出中会注明），后续通知、数据库、扩展刷新的验证完全一致。
+**自动跑一遍**：服务都启动后，执行 `python3 tests/e2e_local_billing.py`，会自动完成注册、邮箱验证、登录、从方案页开通 Premium+、经后端用 DeepSeek 和 DeepL 翻译并记录用量、生词本云同步、到期取消，共 COUNT 项检查。Stripe 支付页和客户门户是第三方页面，加载慢时自动化填写不稳定，脚本会改用 Stripe API 完成同样的付款与取消操作（输出中会注明），后续通知、数据库、扩展刷新的验证完全一致。
 
 想直接模拟某个事件，不经过支付页：
 

@@ -6,24 +6,26 @@
   "transStyle": "none",
   "transColor": "#8b5cf6",
   "floatBall": true,
-  "selection": { "enabled": true, "trigger": "icon" },
-  "hover": { "enabled": true, "key": "Alt" },
-  "inputTranslate": { "enabled": false, "targetLang": "en" },
-  "youtube": { "enabled": true },
-  "alwaysSites": ["news.ycombinator.com", "medium.com"],
-  "neverSites": ["mail.google.com"],
-  "llm": {
-    "prompt": "You are a professional translator. Translate the text into {{to}} accurately and fluently, preserving meaning, tone, terminology, numbers, URLs and proper nouns. Output only the translation without any explanation.",
-    "temperature": 0.3
+  "selection": {
+    "enabled": true,
+    "trigger": "icon"
   },
-  "engines": {
-    "google": {},
-    "microsoft": { "apiKey": "", "region": "eastasia" },
-    "deepl": { "apiKey": "", "apiUrl": "" },
-    "openai": { "apiKey": "", "baseUrl": "https://api.openai.com/v1", "model": "gpt-4.1-mini" },
-    "gemini": { "apiKey": "", "model": "gemini-2.5-flash" },
-    "deepseek": { "apiKey": "", "baseUrl": "https://api.deepseek.com", "model": "deepseek-chat" },
-    "claude": { "apiKey": "", "model": "claude-haiku-5-5" },
-    "custom": { "apiKey": "", "baseUrl": "http://localhost:11434/v1", "model": "qwen2.5:7b" }
-  }
+  "hover": {
+    "enabled": true,
+    "key": "Alt"
+  },
+  "inputTranslate": {
+    "enabled": false,
+    "targetLang": "en"
+  },
+  "youtube": {
+    "enabled": true
+  },
+  "alwaysSites": [
+    "news.ycombinator.com",
+    "medium.com"
+  ],
+  "neverSites": [
+    "mail.google.com"
+  ]
 }

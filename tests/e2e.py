@@ -22,24 +22,23 @@ http.server.SimpleHTTPRequestHandler.log_message = lambda *a: None
 LLM_CALLS = []
 
 
-class MockLLM(http.server.BaseHTTPRequestHandler):
+class MockBackend(http.server.BaseHTTPRequestHandler):
+    """模拟微光翻译后端的翻译代理：校验登录令牌，返回译文与用量"""
     def log_message(self, *a):
         pass
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-        user = body['messages'][-1]['content']
-        LLM_CALLS.append(user)
-        if 'JSON array' in user:
-            arr = json.loads(user[user.rindex('\n\n') + 2:])
-            content = '```json\n' + json.dumps({'translations': ['【译】' + s for s in arr]}, ensure_ascii=False) + '\n```'
+        LLM_CALLS.append({'path': self.path, 'auth': self.headers.get('Authorization'), 'engine': body.get('engine'), 'n': len(body.get('texts', []))})
+        if self.headers.get('Authorization') != 'Bearer test-token':
+            code, out = 401, {'error': '请先登录', 'code': 'login'}
         else:
-            content = '【译】' + user
-        out = json.dumps({'choices': [{'message': {'content': content}}]}).encode()
-        self.send_response(200)
+            code, out = 200, {'translations': ['【译】' + t for t in body['texts']], 'usage': {'tokens': 1234, 'limit': 20000000, 'month': '2026-11'}}
+        data = json.dumps(out, ensure_ascii=False).encode()
+        self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        self.wfile.write(out)
+        self.wfile.write(data)
 
 
 def serve(port, handler):
@@ -48,7 +47,7 @@ def serve(port, handler):
 
 
 serve(8765, functools.partial(http.server.SimpleHTTPRequestHandler, directory=FIXTURES))
-serve(8766, MockLLM)
+serve(8766, MockBackend)
 
 # ---------- 断言工具 ----------
 results = []
@@ -85,10 +84,9 @@ async def main():
         r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'google',texts:['Hello world'],to:'zh-CN',noCache:true})""")
         check('Google 翻译返回中文', r.get('ok') and '你好' in r['data'][0], str(r))
         r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['Hi']})""")
-        check('未配置 Key 时给出中文提示', not r.get('ok') and 'API Key' in r.get('error', ''), r.get('error'))
-        await sw.evaluate(SET, {'engines': {'custom': {'baseUrl': 'http://127.0.0.1:9/v1', 'model': 'x', 'apiKey': ''}}})
-        r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'custom',texts:['Hi'],noCache:true})""")
-        check('服务不可达时给出网络错误', not r.get('ok') and '网络错误' in r.get('error', ''), r.get('error'))
+        check('未登录使用付费引擎时提示需要会员', not r.get('ok') and '需要登录并开通会员' in r.get('error', ''), r.get('error'))
+        r = await ext.evaluate("""()=>chrome.runtime.sendMessage({type:'translate',engine:'custom',texts:['Hi']})""")
+        check('已移除的自定义引擎被拒绝', not r.get('ok') and '未知翻译引擎' in r.get('error', ''), r.get('error'))
 
         # 2. 整页翻译
         print('\n[2] 整页双语翻译')
@@ -135,17 +133,26 @@ async def main():
         check('译文全部移除', await page.locator('gl-trans').count() == 0)
         check('host 标记清理干净', await page.locator('.gl-host').count() == 0)
 
-        # 6. 大模型批量翻译（mock）
-        print('\n[6] 大模型批量翻译（本地 mock）')
-        await sw.evaluate(SET, {'engine': 'custom', 'engines': {'custom': {'baseUrl': 'http://127.0.0.1:8766/v1', 'model': 'mock', 'apiKey': ''}}})
+        # 6. 付费引擎经由后端翻译代理（模拟后端）
+        print('\n[6] 付费引擎经由后端翻译代理（本地模拟）')
+        import time as _t
+        await sw.evaluate("""(o)=>chrome.storage.local.set(o)""", {
+            'backendOverride': {'supabaseUrl': 'http://127.0.0.1:8766', 'supabaseAnonKey': 'anon-test'},
+            'auth': {'access_token': 'test-token', 'refresh_token': 'r', 'expires_at': int(_t.time()) + 3600, 'user': {'id': 'u1', 'email': 'a@b.c'}},
+            'account': {'email': 'a@b.c', 'plan': 'premium_plus', 'usage': {'tokens': 0, 'limit': 20000000}},
+        })
+        await sw.evaluate(SET, {'engine': 'deepseek'})
         await page.reload()
         await page.wait_for_timeout(800)
         LLM_CALLS.clear()
         await sw.evaluate(PAGE, True)
         await page.wait_for_function("document.querySelectorAll('gl-trans:not(.gl-loading)').length >= 11", timeout=15000)
         texts = await page.evaluate(TRANS)
-        check('全部段落使用大模型译文', all(t.startswith('【译】') for t in texts), f'{len(texts)} 段')
-        check('11 段只发 1 次请求', len(LLM_CALLS) == 1, f'实际 {len(LLM_CALLS)} 次')
+        check('全部段落使用后端返回的译文', all(t.startswith('【译】') for t in texts), f'{len(texts)} 段')
+        check('11 段只发 1 次后端请求，并带登录令牌', len(LLM_CALLS) == 1 and LLM_CALLS[0]['auth'] == 'Bearer test-token'
+              and LLM_CALLS[0]['engine'] == 'deepseek' and LLM_CALLS[0]['path'] == '/functions/v1/translate', LLM_CALLS)
+        used = await sw.evaluate("chrome.storage.local.get('account').then(r=>r.account.usage.tokens)")
+        check('返回的本月用量写入账户状态', used == 1234, used)
 
         await ctx.close()
 

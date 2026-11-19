@@ -626,6 +626,49 @@ html[data-mode='drawer'] .main {
   text-decoration: underline;
 }
 
+/* 标题栏右上角的 Premium 入口：免费版为金色描边，会员为金色实心 */
+.chip.premium {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 3px 11px;
+  background: transparent;
+  cursor: pointer;
+}
+.chip.premium:hover {
+  background: rgba(233, 196, 106, 0.12);
+}
+.chip.premium.on {
+  background: var(--gold);
+  color: #1c1a14;
+  border-color: var(--gold);
+}
+.chip.premium svg {
+  width: 13px;
+  height: 13px;
+}
+/* AI 用量 */
+.usage .bar {
+  height: 6px;
+  margin: 10px 0 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.usage .bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #9b7bff, var(--gold));
+}
+.pro-card .gold {
+  margin-top: 6px;
+  height: 44px;
+}
+
 /* ---------- 账户 ---------- */
 .chip.pro {
   display: inline-flex;

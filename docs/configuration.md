@@ -1,101 +1,40 @@
 # 配置指南
 
-本文说明每个翻译引擎怎么拿到 API Key、面板和设置页每一项的含义，以及如何批量导入配置。
+本文说明翻译引擎与会员等级、面板和设置页每一项的含义，以及如何批量导入配置。
 
-所有配置保存在浏览器本地的 `chrome.storage.local` 中，API Key 不会上传到任何服务器，只会在翻译时直接发送给对应的服务商。
+所有设置保存在浏览器本地的 `chrome.storage.local` 中。扩展里不再填写任何 API Key：Google 翻译由浏览器直接调用，其余引擎都由微光翻译后端代为请求，服务商的 Key 只保存在后端。
 
 ---
 
-## 一、翻译引擎配置
+## 一、翻译引擎与会员等级
 
-打开方式：点击扩展图标打开面板 → 设置 → “API Key”，或点击面板右侧栏最下方的“完整设置”，进入“翻译服务”。每张卡片填写后点击“测试连接”，会用一句英文测试并显示耗时和译文。点击“设为默认”即可切换默认引擎。
+打开方式：面板 → 设置 → 翻译引擎，或完整设置页的“翻译服务”。每张卡片标注所需等级；已解锁的引擎可以“测试连接”“设为默认”，未解锁的显示“升级解锁”，点击打开 Premium 方案页。
 
-### Google 翻译（默认，免费）
-
-无需任何配置。使用 Google 的公开网页翻译接口，速度快、语言覆盖最广。
-
-> 该接口为非官方免费接口，高频使用时可能被临时限流（返回 429）。遇到这种情况，切换到其他引擎即可。
-
-### Microsoft 翻译（Azure Translator）
-
-| 字段 | 说明 |
-| --- | --- |
-| API Key | Azure Translator 资源的密钥 |
-| 区域 | 资源所在区域，如 `eastasia`；创建的是“全局（Global）”资源时可留空 |
-
-**获取方式：**
-
-**第一步，** 登录 [Azure 门户](https://portal.azure.com)，搜索“Translator”，创建资源。
-
-**第二步，** 定价层选择 **F0（免费）**，每月 200 万字符。
-
-**第三步，** 创建完成后进入“密钥和终结点”，复制“密钥 1”和“位置/区域”。
-
-### DeepL
-
-| 字段 | 说明 |
-| --- | --- |
-| API Key | DeepL API 密钥 |
-| 自定义 API 地址 | 可选。留空时自动判断：Key 以 `:fx` 结尾走 `api-free.deepl.com`，否则走 `api.deepl.com` |
-
-**获取方式：** 在 [DeepL API](https://www.deepl.com/pro-api) 注册 API Free 账户（每月 50 万字符，需绑定信用卡验证），在账户页“API Keys”中复制密钥。
-
-> 注意：DeepL 网页版的 Pro 订阅与 API 订阅是两个产品，网页版订阅不包含 API Key。
-
-### OpenAI GPT
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| API Key | — | 以 `sk-` 开头 |
-| API 地址 | `https://api.openai.com/v1` | 可替换为任意 OpenAI 兼容的代理地址 |
-| 模型 | `gpt-4.1-mini` | 下拉有常用模型，也可手动输入 |
-
-**获取方式：** [platform.openai.com/api-keys](https://platform.openai.com/api-keys) 创建密钥，账户需有余额。
-
-> 部分推理模型不支持自定义 temperature，扩展检测到相关报错后会自动去掉该参数重试。
-
-### Google Gemini
-
-| 字段 | 默认值 |
-| --- | --- |
-| API Key | — |
-| 模型 | `gemini-2.5-flash` |
-
-**获取方式：** 在 [Google AI Studio](https://aistudio.google.com/apikey) 点击“Create API key”，有免费额度。
-
-### DeepSeek
-
-| 字段 | 默认值 |
-| --- | --- |
-| API Key | — |
-| API 地址 | `https://api.deepseek.com` |
-| 模型 | `deepseek-chat` |
-
-**获取方式：** [platform.deepseek.com](https://platform.deepseek.com) 注册并充值后，在“API keys”中创建。翻译场景推荐 `deepseek-chat`，`deepseek-reasoner` 会先思考，速度慢很多。
-
-### Anthropic Claude
-
-| 字段 | 默认值 |
-| --- | --- |
-| API Key | — |
-| 模型 | `claude-haiku-5-5` |
-
-**获取方式：** [console.anthropic.com](https://console.anthropic.com) 的“API Keys”页面创建。网页翻译量大，推荐 Haiku（快且便宜）；对译文质量要求高时可选 Sonnet。
-
-### 自定义（OpenAI 兼容接口）
-
-任何实现了 `/chat/completions` 的服务都能接入。API 地址填到 `/v1` 为止即可，扩展会自动补全 `/chat/completions`（若已填完整路径则原样使用）。
-
-| 服务 | API 地址 | 模型示例 | 需要 Key |
+| 引擎 | 类型 | 需要的等级 | 请求方式 |
 | --- | --- | --- | --- |
-| Ollama（本地） | `http://localhost:11434/v1` | `qwen2.5:7b` | 否 |
-| LM Studio（本地） | `http://localhost:1234/v1` | 加载的模型名 | 否 |
-| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4.1-mini` | 是 |
-| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | 是 |
-| Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` | 是 |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` | 是 |
+| Google 翻译（默认） | 机器翻译 | 免费 | 浏览器直接调用 Google 公开接口 |
+| DeepL | 机器翻译 | Premium | 后端代理 |
+| Microsoft 翻译 | 机器翻译 | Premium | 后端代理（Azure Translator） |
+| OpenAI GPT | 大模型 | Premium+ | 后端代理，计入每月 Token |
+| Google Gemini | 大模型 | Premium+ | 后端代理，计入每月 Token |
+| DeepSeek | 大模型 | Premium+ | 后端代理，计入每月 Token |
+| Anthropic Claude | 大模型 | Premium+ | 后端代理，计入每月 Token |
 
-> 使用 Ollama 时需允许扩展跨域访问，启动前设置环境变量：`OLLAMA_ORIGINS="chrome-extension://*" ollama serve`。
+> Google 接口为非官方免费接口，高频使用时可能被临时限流（返回 429）。遇到这种情况稍等片刻，或切换到会员引擎。
+
+### 会员方案
+
+| 方案 | 价格（美元） | 权益 |
+| --- | --- | --- |
+| 免费版 | $0 | 全部翻译方式、YouTube 双语字幕、Google 翻译、生词本最多 100 个 |
+| Premium | $29 / 年（仅年付） | 免费版全部功能 + 无限生词本、生词本云同步、DeepL、Microsoft 翻译 |
+| Premium+ | $6 / 月，或 $69 / 年 | Premium 全部功能 + GPT、Gemini、DeepSeek、Claude，每月 2000 万 Token |
+
+入口：面板首页右上角的“Premium”标签（会员时显示为实心的“Premium / Premium+”），或账户页“查看会员方案”。方案页可切换月付、年付，点击“开通”后在新标签页的 Stripe 页面付款。已经是会员时，升级或切换方案在“管理订阅”（Stripe 客户门户）中完成，避免重复订阅。
+
+**Token 用量：** 大模型按服务商返回的输入 + 输出 Token 计数，每月 1 日（UTC）清零。Premium+ 会员在账户页能看到本月用量进度条；用完后大模型引擎暂停到下月，DeepL、Microsoft、Google 仍可使用。
+
+服务商的 Key 怎样配置到后端，见 [后端部署指南](backend.md)。
 
 ---
 
@@ -108,13 +47,13 @@
 | 入口 | 打开方式 | 适合做什么 |
 | --- | --- | --- |
 | 侧边面板 | 点击工具栏图标（再点一次收起），面板在网页内从右侧滑出；或在网页上把鼠标移到悬浮球，点击“面板”。浏览器内置页面上改为弹窗显示 | 开关整页翻译、切换引擎和语言、调整常用功能、查看生词本 |
-| 完整设置页 | 面板右侧栏最下方“完整设置”，或面板 → 设置 → 完整设置 | 填写 API Key、修改提示词、网站规则、导入导出 |
+| 完整设置页 | 面板右侧栏最下方“完整设置”，或面板 → 设置 → 完整设置 | 翻译服务、网站规则、导入导出、查看当前版本 |
 
 面板“设置”页的每一行对应一项设置，点进去选择即可，修改立即生效：
 
 | 面板中的行 | 对应设置 | 可选值 |
 | --- | --- | --- |
-| 翻译引擎 | 默认翻译服务 | 8 个引擎，未配置 Key 的标注“需 API Key” |
+| 翻译引擎 | 默认翻译服务 | 7 个引擎，标注“免费 / Premium / Premium+”；选择未解锁的引擎时打开 Premium 方案页 |
 | 双语字幕 | YouTube 双语字幕 | 已开启 / 已关闭 |
 | 沉浸翻译 | 显示模式 | 对照翻译 / 仅显示译文 |
 | 译文样式 | 译文样式 | 8 种样式 |
@@ -127,17 +66,18 @@
 
 面板首页的“总在此网站开启”等价于把当前域名加入“总是翻译”名单。
 
-### 账户与 Pro 会员
+### 账户与会员
 
 面板 → 设置 → 账户（设置页第一行）。
 
 | 状态 | 账户页显示 | 可以做什么 |
 | --- | --- | --- |
 | 未登录 | 登录页（“欢迎回来”）/ 注册页（“注册账号”） | Google 登录；邮箱注册（需点击验证邮件）、登录、忘记密码；注册页可选“以游客身份使用”直接返回首页 |
-| 免费版 | 邮箱、“免费版”、升级 Pro 卡片 | 月付或年付升级，支付在新标签页的 Stripe 页面完成 |
-| Pro 会员 | 邮箱、金色“Pro 会员”、下次续费日期 | 管理订阅（换方案、改卡、取消、发票）、刷新状态 |
+| 免费版 | 邮箱、“免费版”、开通会员卡片 | “查看会员方案”打开 Premium 方案页 |
+| Premium 会员 | 邮箱、金色“Premium 会员”、下次续费日期 | 管理订阅（换方案、改卡、取消、发票）、升级到 Premium+、刷新状态 |
+| Premium+ 会员 | 同上，另有“本月 AI 用量”进度条 | 管理订阅、刷新状态 |
 
-支付完成后无需任何操作，几秒内自动变为 Pro。账户功能需要先部署后端，见 [后端部署指南](backend.md)；未部署时账户页提示“账户服务尚未配置”，其他功能不受影响。
+支付完成后无需任何操作，几秒内自动变为对应会员。账户功能需要先部署后端，见 [后端部署指南](backend.md)；未部署时账户页提示“账户服务尚未配置”，其他功能不受影响。
 
 ### 生词本
 
@@ -151,7 +91,7 @@
 
 单词按整词匹配（`grammar` 不会匹配 `grammarly`），多个词组成的短语按原文出现匹配，都不区分大小写。
 
-生词保存在本地 `chrome.storage.local` 的 `words` 中，按小写去重，最多 5000 条，不随“导出设置”导出。
+生词保存在本地 `chrome.storage.local` 的 `words` 中，按小写去重，不随“导出设置”导出。免费版最多收藏 100 个，达到上限时提示升级；Premium 及以上不限数量（最多 5000 条），并在登录后自动同步到云端：换电脑或重装扩展，登录同一账号即可恢复，在一台设备上删除的词也会在其他设备上删除。
 
 ### 基本设置
 
@@ -224,21 +164,19 @@ commit in English. Output only the translation.
 
 ## 三、导入与导出
 
-设置页 → 高级 → “导出设置”会下载 `glimmer-settings.json`，“导入设置”可恢复。仓库中的 [`settings.example.json`](./settings.example.json) 是一份完整示例，填好 Key 后直接导入即可批量配置。
+设置页 → 高级 → “导出设置”会下载 `glimmer-settings.json`，“导入设置”可恢复。仓库中的 [`settings.example.json`](./settings.example.json) 是一份完整示例，直接导入即可批量配置。
 
 导入时缺失的字段会自动使用默认值，所以文件里只写需要修改的部分也可以：
 
 ```json
 {
-  "engine": "deepseek",
+  "engine": "deepl",
   "targetLang": "zh-CN",
-  "engines": {
-    "deepseek": { "apiKey": "sk-xxxx" }
-  }
+  "alwaysSites": ["medium.com"]
 }
 ```
 
-> 导出的文件包含明文 API Key，请勿分享或提交到代码仓库。
+旧版本导出的文件中如果有 `engines`、`llm`（API Key 与提示词），导入时会被忽略；引擎是已移除的“自定义”时自动改回 Google 翻译。
 
 ---
 

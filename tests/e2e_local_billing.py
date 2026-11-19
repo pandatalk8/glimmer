@@ -173,8 +173,13 @@ async def main():
         await wait_for(lambda: pp.locator('.acct-info').count(), 15)
         check('验证后在面板登录成功，免费版', '免费版' in await pp.locator('.plan').inner_text())
 
-        print('\n[2] 订阅：Stripe Checkout 测试卡付款')
-        await pp.locator('[data-act=checkout][data-interval=month]').click()
+        print('\n[2] Premium 方案页 → 订阅 Premium+ 月付：Stripe Checkout 测试卡付款')
+        await pp.locator('.pro-card [data-act=premium]').click()
+        prem = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'premium/premium.html' in x.url), None)), 15)
+        check('面板“查看会员方案”打开 Premium 页面', prem is not None)
+        await prem.wait_for_selector('.plan.premium_plus [data-act=buy]')
+        await prem.locator('#period [data-interval=month]').click()
+        await prem.locator('.plan.premium_plus [data-act=buy]').click()
         pay = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'checkout.stripe.com' in x.url), None)), 30)
         check('新标签页打开 Stripe 支付页', pay is not None, pay.url[:60] if pay else await pp.locator('.body').inner_text())
         if not pay:
@@ -201,22 +206,43 @@ async def main():
             cus = sql(f"select stripe_customer_id from profiles where email='{email}'")
             check('支付页已为用户创建 Stripe 客户', cus.startswith('cus_'), cus)
             pm = stripe_api('POST', '/payment_methods/pm_card_visa/attach', {'customer': cus})['id']
-            subn = stripe_api('POST', '/subscriptions', {'customer': cus, 'items[0][price]': ENV['STRIPE_PRICE_MONTHLY'],
+            subn = stripe_api('POST', '/subscriptions', {'customer': cus, 'items[0][price]': ENV['STRIPE_PRICE_PLUS_MONTHLY'],
                                                          'default_payment_method': pm, 'metadata[user_id]': uid})
             check('Stripe API 创建订阅成功（测试卡扣款）', subn.get('status') == 'active', subn.get('status'))
             await pay.goto(f'{API}/functions/v1/billing-return?status=success')  # 模拟付款后的跳转
             check('打开本地返回页（PUBLIC_SUPABASE_URL 地址可访问）', 'billing-return' in pay.url and '订阅成功' in await pay.content())
         acc = await wait_for(lambda: _pro(account), 40)
-        check('webhook 同步后自动变为 Pro', acc and acc.get('plan') == 'pro', acc and {k: acc.get(k) for k in ('plan', 'status', 'periodEnd')})
+        check('webhook 同步后自动变为 Premium+', acc and acc.get('plan') == 'premium_plus', acc and {k: acc.get(k) for k in ('plan', 'status', 'periodEnd')})
         row = sql(f"select plan||','||subscription_status||','||(stripe_customer_id is not null) from profiles where email='{email}'")
-        check('数据库 profiles 已更新', row.startswith('pro,active,t'), row)
+        check('数据库 profiles 已更新', row.startswith('premium_plus,active,t'), row)
         sub = sql(f"select status||','||billing_interval from subscriptions s join profiles p on p.id=s.user_id where p.email='{email}'")
         check('数据库 subscriptions 记录月付订阅', sub == 'active,month', sub)
-        await pp.bring_to_front()
-        await pp.wait_for_timeout(800)
+        # 弹窗形态的面板打开方案页后已自动关闭，重新打开账户页
+        pp = await ctx.new_page()
+        await pp.set_viewport_size({'width': 400, 'height': 640})
+        await pp.goto(f'chrome-extension://{eid}/panel/panel.html?view=account')
+        await pp.wait_for_timeout(1200)
         await pp.screenshot(path=f'{OUTPUT}/billing-pro.png')
-        check('面板显示 Pro 会员与续费日期', 'Pro 会员' in await pp.locator('.plan').inner_text()
-              and '下次续费' in await pp.locator('.body').inner_text())
+        check('面板显示 Premium+ 会员、续费日期与 AI 用量', 'Premium+ 会员' in await pp.locator('.plan').inner_text()
+              and '下次续费' in await pp.locator('.body').inner_text() and await pp.locator('.usage .bar').count() == 1)
+
+        print('\n[2b] 付费引擎经由本地后端真实翻译，用量入库；生词本云同步')
+        uid = sql(f"select id from profiles where email='{email}'")
+        for eng in ('deepseek', 'deepl'):
+            r = await pp.evaluate("(e)=>chrome.runtime.sendMessage({type:'translate',engine:e,texts:['Good morning, my friend.'],to:'zh-CN',noCache:true})", eng)
+            ok = bool(r.get('ok')) and any('\u4e00' <= c <= '\u9fff' for c in r['data'][0])
+            check(f'{eng} 经后端返回中文译文', ok, (r.get('data') or [r.get('error')])[0])
+        usage = sql(f"select tokens||','||chars||','||requests from usage_monthly where user_id='{uid}'")
+        tok, chars, reqs = (int(x) for x in (usage or '0,0,0').split(','))
+        check('usage_monthly 记录了 Token、字符数与请求次数', tok > 0 and chars > 0 and reqs >= 2, usage)
+        acc = await account()
+        check('扩展账户状态中的本月用量随之更新', (acc.get('usage') or {}).get('tokens', 0) > 0, acc.get('usage'))
+        await pp.evaluate("chrome.runtime.sendMessage({type:'toggleWord',word:'serendipity',trans:'意外发现',url:'https://example.com'})")
+        row = await wait_for(lambda: asyncio.sleep(0, sql(f"select w from words where user_id='{uid}' and not deleted") or None), 15)
+        check('收藏的生词同步到云端 words 表', row == 'serendipity', row)
+        await pp.evaluate("chrome.runtime.sendMessage({type:'toggleWord',word:'serendipity'})")
+        gone = await wait_for(lambda: asyncio.sleep(0, sql(f"select deleted from words where user_id='{uid}' and w='serendipity'") == 't' or None), 15)
+        check('取消收藏后云端标记删除', gone is True)
 
         print('\n[3] 管理订阅：Stripe 客户门户取消续费')
         await pp.locator('[data-act=portal]').first.click()
@@ -249,7 +275,7 @@ async def main():
                 via = 'Stripe API'
             check(f'Stripe 上的订阅已设为到期取消（{via}）', is_cancelled())
             acc = await wait_for(lambda: _cancel(account, pp), 40)
-            check('取消后仍为 Pro，标记到期取消', acc and acc.get('plan') == 'pro' and acc.get('cancelAtPeriodEnd'), acc and acc.get('cancelAtPeriodEnd'))
+            check('取消后仍为 Premium+，标记到期取消', acc and acc.get('plan') == 'premium_plus' and acc.get('cancelAtPeriodEnd'), acc and acc.get('cancelAtPeriodEnd'))
             await pp.bring_to_front()
             await pp.locator('[data-act=acctRefresh]').click()
             await pp.wait_for_timeout(1500)
@@ -267,7 +293,7 @@ async def main():
 
 async def _pro(account):
     a = await account()
-    return a if a and a.get('plan') == 'pro' else None
+    return a if a and a.get('plan') == 'premium_plus' else None
 
 
 async def _cancel(account, pp):

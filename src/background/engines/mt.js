@@ -1,5 +1,4 @@
-// 传统机器翻译引擎：Google / Microsoft / DeepL
-import { deeplSource, deeplTarget, msCode } from '../../shared/languages.js';
+// 浏览器中直接调用的免费引擎：Google 翻译。DeepL、Microsoft 与大模型由后端调用（supabase/functions/translate）
 import { fetchT, httpError, mapLimit } from './util.js';
 
 // ---------- Google（免费 gtx 接口） ----------
@@ -62,61 +61,6 @@ export async function google(texts, { from, to }) {
       if (e.status === 429) throw e; // 限流时逐段重试只会更糟
       return mapLimit(chunk, 4, (t) => googleOne(t, from, to)); // 降级为单段接口
     }
-  });
-  return out.flat();
-}
-
-// ---------- Microsoft（Azure Translator 官方 API，免费层每月 200 万字符） ----------
-export async function microsoft(texts, { from, to, cfg }) {
-  if (!cfg.apiKey) throw new Error('请先在设置中填写 Azure Translator Key');
-  const headers = {
-    'Content-Type': 'application/json',
-    'Ocp-Apim-Subscription-Key': cfg.apiKey.trim(),
-  };
-  if (cfg.region?.trim()) headers['Ocp-Apim-Subscription-Region'] = cfg.region.trim();
-  const chunks = [];
-  for (let i = 0; i < texts.length; i += 50) chunks.push(texts.slice(i, i + 50));
-  const out = await mapLimit(chunks, 3, async (chunk) => {
-    const src = msCode(from);
-    const url =
-      'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0' +
-      (src ? `&from=${src}` : '') +
-      `&to=${msCode(to)}`;
-    const res = await fetchT(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(chunk.map((t) => ({ Text: t }))),
-    });
-    if (!res.ok) throw await httpError(res, 'Microsoft');
-    const data = await res.json();
-    return data.map((d) => d?.translations?.[0]?.text || '');
-  });
-  return out.flat();
-}
-
-// ---------- DeepL（官方 API） ----------
-export async function deepl(texts, { from, to, cfg }) {
-  if (!cfg.apiKey) throw new Error('请先在设置中填写 DeepL API Key');
-  const base =
-    cfg.apiUrl?.trim() ||
-    (cfg.apiKey.trim().endsWith(':fx') ? 'https://api-free.deepl.com' : 'https://api.deepl.com');
-  const chunks = [];
-  for (let i = 0; i < texts.length; i += 50) chunks.push(texts.slice(i, i + 50));
-  const out = await mapLimit(chunks, 2, async (chunk) => {
-    const body = { text: chunk, target_lang: deeplTarget(to) };
-    const src = deeplSource(from);
-    if (src) body.source_lang = src;
-    const res = await fetchT(base.replace(/\/$/, '') + '/v2/translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'DeepL-Auth-Key ' + cfg.apiKey.trim(),
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw await httpError(res, 'DeepL');
-    const data = await res.json();
-    return data.translations.map((t) => t.text);
   });
   return out.flat();
 }
