@@ -247,14 +247,16 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 
 ### 4.5.1 本地开启 Google 登录（可选）
 
-1. 按 [后端部署指南](backend.md) “开启 Google 登录”创建 OAuth 客户端，回调地址填 `http://127.0.0.1:54321/auth/v1/callback`
+`config.toml` 已开启 Google 登录（`enabled = true`），本地和云端共用同一个 OAuth 客户端：
+
+1. 按 [后端部署指南](backend.md) “开启 Google 登录”创建 OAuth 客户端，回调地址中包含 `http://127.0.0.1:54321/auth/v1/callback`
 2. 在项目根目录创建 `supabase/.env`（已被 git 忽略）：
    ```bash
    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
    SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=GOCSPX-xxx
    ```
-3. 把 `supabase/config.toml` 中 `[auth.external.google]` 的 `enabled` 改为 `true`
-4. 重启本地 Supabase：`npx supabase stop && npx supabase start`
+   没有这个文件时本地 Supabase 会因缺少变量无法启动，可以临时把 `enabled` 改为 `false`
+3. 重启本地 Supabase：`npx supabase stop && npx supabase start`
 
 之后在面板的登录页点击“继续使用 Google”即可。未开启时，点击会提示“尚未开启 Google 登录”。
 
@@ -263,7 +265,7 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 | 步骤 | 操作 | 预期结果 |
 | --- | --- | --- |
 | 1 | 账户页 → 注册，填写任意邮箱（如 `me@test.local`）和密码 | 提示“验证邮件已发送” |
-| 2 | 打开 `http://127.0.0.1:54324`，点开验证邮件中的链接 | 验证成功后会跳到 `site_url`（示例网址打不开也没关系，验证已完成） |
+| 2 | 打开 `http://127.0.0.1:54324`，点开验证邮件中的链接 | 验证成功后跳到“邮箱已验证”页面 |
 | 3 | 回到面板登录 | 显示邮箱和“免费版” |
 | 4 | 面板首页右上角“Premium” → 方案页切到“月付方案” → “开通 Premium+” | 新标签页打开 Stripe 测试支付页 |
 | 5 | 卡号 `4242 4242 4242 4242`，任意未来日期、任意 CVC、任意邮编，付款 | 跳到本机的“订阅成功”页面；终端 2 显示事件转发 `[200]` |

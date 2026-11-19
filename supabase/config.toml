@@ -2,14 +2,16 @@
 project_id = "glimmer-translate"
 
 [auth]
-site_url = "https://example.com"
+# 验证邮件、重置密码邮件中的链接最终跳到这里：云端返回页的“邮箱已验证”
+site_url = "https://btaihodwxgyhtbyjhbke.supabase.co/functions/v1/billing-return?status=verified"
 # 扩展用 chrome.identity 做第三方登录，授权后跳回 https://<扩展ID>.chromiumapp.org/supabase
 additional_redirect_urls = ["https://*.chromiumapp.org/**"]
 
-# Google 登录：在 Google Cloud 创建 OAuth 客户端后，把 ID 和密钥写入 supabase/.env 再改为 enabled = true
+# Google 登录：OAuth 客户端（Web application 类型）的 ID 和密钥写在 supabase/.env（已被 git 忽略）；
+# 没有该文件时本地启动会因缺少变量而失败，可临时改为 enabled = false
 # 授权回调地址填 http://127.0.0.1:54321/auth/v1/callback（本地）或 https://<项目>.supabase.co/auth/v1/callback（云端）
 [auth.external.google]
-enabled = false
+enabled = true
 client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 skip_nonce_check = true

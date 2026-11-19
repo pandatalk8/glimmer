@@ -65,7 +65,7 @@
 **第三步，配置邮箱登录。** Authentication → Sign In / Providers → Email：
 
 - 保持开启 “Confirm email”（注册后需点击验证邮件），可以防止乱填邮箱
-- Authentication → URL Configuration 的 Site URL 填你的官网或任意你控制的网址，验证邮件和重置密码邮件中的链接会跳到这里
+- Site URL：验证邮件和重置密码邮件中的链接最终跳到这里。`config.toml` 中设为云端返回页的“邮箱已验证”页面（`/functions/v1/billing-return?status=verified`），换项目时同步修改
 - 默认的邮件发送有频率限制（每小时几封），正式上线前在 Authentication → Emails → SMTP Settings 配置自己的邮件服务
 
 **第四步，建表。** 安装命令行工具后关联项目并推送迁移：
@@ -86,6 +86,10 @@ npx supabase db push
 
 **第一步，创建客户端。** 打开 [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create Credentials → OAuth client ID，类型选 **Web application**。首次使用需要先配置 OAuth consent screen（应用名称填“微光翻译”，用户类型选 External）。
 
+> 为什么不选“Chrome 扩展”类型？和 Google 交换凭据的是 Supabase 的服务器：Google 授权后跳回 Supabase 的 callback，Supabase 用 Client secret 换取用户身份，再把 Supabase 的登录令牌交给插件。“Chrome 扩展”类型没有 Client secret，也不能填跳转地址，只适用于插件直接调用 `chrome.identity.getAuthToken` 访问 Google 自己的接口。
+>
+> 同意屏幕处于 Testing 状态时，只有加入 Test users 的 Google 账号能登录；正式开放前在 Audience 页面点 Publish app。
+
 **第二步，填写回调地址。** Authorized redirect URIs 填 Supabase 的回调地址：
 
 | 环境 | 回调地址 |
@@ -95,7 +99,7 @@ npx supabase db push
 
 保存后记下 Client ID 和 Client secret。
 
-**第三步，在 Supabase 中开启。** 云端：Authentication → Sign In / Providers → Google，打开并填入 Client ID 和 Client secret；再到 Authentication → URL Configuration 的 Redirect URLs 中加入 `https://*.chromiumapp.org/**`（扩展登录后的跳回地址）。本地：见 [本地运行指南](local-dev.md) 的 Google 登录一节。
+**第三步，在 Supabase 中开启。** 推荐用命令：把 Client ID 和 Secret 写进 `supabase/.env`（`SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID`、`SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`，已被 git 忽略），`config.toml` 中 `[auth.external.google]` 已是 `enabled = true`，然后执行 `npx supabase config diff` 核对、`npx supabase config push` 推送。推送会同时设置 Site URL 和 Redirect URLs（`https://*.chromiumapp.org/**`，扩展登录后的跳回地址），不会改动 `config.toml` 中没有声明的云端设置。也可以在后台手动设置：Authentication → Sign In / Providers → Google 填入 Client ID 和 Secret；Authentication → URL Configuration 的 Redirect URLs 加入上面的地址。本地：见 [本地运行指南](local-dev.md) 的 Google 登录一节。
 
 扩展的跳回地址形如 `https://<扩展 ID>.chromiumapp.org/supabase`，由 Chrome 的 `chrome.identity.getRedirectURL()` 生成；开发版的扩展 ID 随加载目录变化，所以允许列表使用通配符。
 
@@ -197,13 +201,15 @@ export const BACKEND = {
 
 在 `chrome://extensions` 中重新加载扩展。打开面板 → 设置 → 账户，看到登录表单即表示连接成功。
 
-> **当前部署：** 云端项目“glimmer”（`btaihodwxgyhtbyjhbke`，美国东部）已完成上述全部步骤：两份迁移、5 个函数、9 个密钥、Stripe 沙盒 webhook（`/functions/v1/stripe-webhook`），`config.js` 已填写。`publishable` 公开密钥可以提交到仓库，`secret` / `service_role` 密钥不可以。
+> **当前部署：** 云端项目“glimmer”（`btaihodwxgyhtbyjhbke`，美国东部）已完成上述全部步骤：两份迁移、5 个函数、9 个密钥、Stripe 沙盒 webhook（`/functions/v1/stripe-webhook`）、Google 登录（Web application 类型的 OAuth 客户端）、Site URL 与扩展跳回地址，`config.js` 已填写。`publishable` 公开密钥可以提交到仓库，`secret` / `service_role` 密钥不可以。
 
 **数据库直连失败时。** `db.<项目 ID>.supabase.co` 只有 IPv6 地址，在只支持 IPv4 的网络里 `supabase db push` 会报 `failed to connect to postgres`。可以改用管理接口执行迁移，不需要数据库密码：
 
 ```bash
 npx supabase db query --remote --yes -f supabase/migrations/<迁移文件>.sql
 ```
+
+**关联云端后本地启动变慢。** `supabase link` 会在 `supabase/.temp/` 写入云端的组件版本（`postgres-version`、`storage-version` 等），之后 `supabase start` 会去下载这些版本的镜像，而且数据库版本变化可能与本地已有数据不兼容。只想保持本地原样时，删除这几个 `*-version` 文件和 `storage-migration`，保留 `project-ref`。
 
 **邮件发送限制。** Supabase 自带的邮件服务每小时只能发很少几封，且只发给项目团队成员的邮箱（用自己的账号测试没问题）。给其他用户开放注册前，必须在 Authentication → Emails → SMTP Settings 接入自己的邮件服务（如 Resend、SendGrid），否则其他人注册时收不到验证邮件。
 
