@@ -401,6 +401,9 @@
   function ensureUI() {
     if (shadow) return shadow;
     uiRoot = document.createElement('glimmer-ui');
+    // 内联 !important：即使网页样式表隐藏未注册的自定义元素，也保持可见（content.css 中还有同样的规则）
+    uiRoot.style.setProperty('visibility', 'visible', 'important');
+    uiRoot.style.setProperty('opacity', '1', 'important');
     uiRoot.setAttribute('translate', 'no');
     shadow = uiRoot.attachShadow({ mode: 'open' });
     const style = document.createElement('link');

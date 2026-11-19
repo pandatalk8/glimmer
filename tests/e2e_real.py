@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover input popup drawer toolbar build always import style ctxmenu
+场景：wiki hn mdn hover input popup drawer toolbar webcomp build always import style ctxmenu
 """
 import asyncio, functools, http.server, json, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -344,6 +344,27 @@ async def main():
             check('内置页、插件设置页提前设为弹窗，普通网页保持侧面板', any(k=='(内置页)' and v.endswith('panel.html') for k,v in pre.items())
                   and all(v=='' for k,v in pre.items() if k.startswith('http')), pre)
             await cp.close()
+
+        # ---------- Web Components 网站（如 Reddit）：自定义元素不能被隐藏 ----------
+        if run('webcomp'):
+            print('\n[webcomp] 隐藏未注册自定义元素的网站')
+            page = await ctx.new_page()
+            await page.goto('http://127.0.0.1:8765/webcomponents.html')
+            await page.wait_for_timeout(800)
+            vis = "(sel)=>{const e=document.querySelector(sel);return e?getComputedStyle(e).visibility:'none'}"
+            check('悬浮球所在的 glimmer-ui 可见', await page.evaluate(vis, 'glimmer-ui') == 'visible')
+            r = await sw.evaluate("""async ()=>{const t=(await chrome.tabs.query({})).find(t=>t.url&&t.url.includes('webcomponents'));
+              return self.__glimmerActionClick(t)}""")
+            await page.wait_for_timeout(800)
+            ok = await page.evaluate("""()=>{const d=document.querySelector('glimmer-ui').shadowRoot.querySelector('.drawer');
+              return !!d && getComputedStyle(d).visibility==='visible'}""")
+            check('侧面板打开且可见', r == 'drawer' and ok, r)
+            await sw.evaluate("""async ()=>{const t=(await chrome.tabs.query({})).find(t=>t.url&&t.url.includes('webcomponents'));
+              await self.__glimmerActionClick(t); await chrome.tabs.sendMessage(t.id,{type:'setPage',on:true})}""")
+            await wait_count(page, 2)
+            check('网页译文 gl-trans 可见', await page.evaluate(vis, 'gl-trans') == 'visible')
+            await page.screenshot(path=f'{OUTPUT}/webcomponents.png')
+            await page.close()
 
         # ---------- 当前加载版本与“需要刷新”提示 ----------
         if run('build'):

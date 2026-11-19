@@ -114,6 +114,7 @@
       if (!player) return;
       if (host?.isConnected && host.parentElement === player) return;
       host = document.createElement('glimmer-ui');
+      host.style.setProperty('visibility', 'visible', 'important');
       host.setAttribute('translate', 'no');
       const shadow = host.attachShadow({ mode: 'open' });
       shadow.innerHTML = `<link rel="stylesheet" href="${chrome.runtime.getURL('src/content/ui.css')}">

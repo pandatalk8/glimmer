@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Web Components Site</title>
+<style>
+  /* 模仿 Reddit 等 Web Components 网站：隐藏尚未注册的自定义元素，避免加载闪烁 */
+  :not(:defined) { visibility: hidden; }
+  body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; line-height: 1.6; padding: 0 16px; }
+</style></head>
+<body>
+<h1>Building Sites with Web Components</h1>
+<p>Many large websites hide custom elements until their definitions load, which can accidentally hide elements injected by browser extensions.</p>
+<p>A translation extension must make sure its own panels and translations stay visible on such pages.</p>
+</body></html>

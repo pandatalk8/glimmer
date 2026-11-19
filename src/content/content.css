@@ -1,3 +1,11 @@
+/* 用 Web Components 构建的网站（如 Reddit）常用 :not(:defined) { visibility: hidden } 隐藏未注册的自定义元素。
+   内容脚本无法注册自定义元素，我们的 <glimmer-ui>、<gl-trans> 会被误伤，这里强制可见 */
+glimmer-ui,
+gl-trans {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
 /* 注入到网页中的译文样式（作用于 <gl-trans>） */
 gl-trans {
   font: inherit;
