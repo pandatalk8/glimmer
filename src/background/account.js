@@ -174,6 +174,41 @@ export async function signIn({ email, password }) {
   return { account: await refreshAccount() };
 }
 
+/**
+ * 第三方登录（目前只有 Google）：Supabase 的 OAuth 授权页 → 用户在 Google 授权 →
+ * 跳回 https://<扩展ID>.chromiumapp.org/supabase，地址中带有访问令牌与刷新令牌。
+ * 需要在 Supabase 中开启对应登录方式，并把上面的跳回地址加入允许的回调地址。
+ */
+export async function signInWithOAuth({ provider }) {
+  const { url } = await backend();
+  const settings = await call('/auth/v1/settings').catch(() => null);
+  if (settings && !settings.external?.[provider]) {
+    throw new Error(provider === 'google' ? '尚未开启 Google 登录：需要先在 Supabase 中配置 Google OAuth（见后端部署指南）' : '该登录方式尚未开启');
+  }
+  const redirect = chrome.identity.getRedirectURL('supabase');
+  const authUrl = `${url}/auth/v1/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${encodeURIComponent(redirect)}`;
+  let result;
+  try {
+    result = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
+  } catch (e) {
+    throw new Error(/did not approve|canceled|cancelled|closed/i.test(e?.message || '') ? '已取消登录' : 'Google 登录失败：' + (e?.message || ''));
+  }
+  const back = new URL(result);
+  const params = new URLSearchParams(back.hash.slice(1) || back.search.slice(1));
+  if (params.get('error')) throw new Error(friendly(params.get('error_description') || params.get('error'), 400));
+  const access = params.get('access_token');
+  if (!access) throw new Error('Google 登录失败：未收到登录令牌');
+  // 令牌中只有用户 ID，补取邮箱
+  const user = await call('/auth/v1/user', { token: access });
+  await saveSession({
+    access_token: access,
+    refresh_token: params.get('refresh_token'),
+    expires_in: Number(params.get('expires_in') || 3600),
+    user,
+  });
+  return { account: await refreshAccount() };
+}
+
 export async function signOut() {
   const auth = await getAuth();
   if (auth) await call('/auth/v1/logout', { method: 'POST', token: auth.access_token }).catch(() => {});

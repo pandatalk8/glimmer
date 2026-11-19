@@ -15,6 +15,8 @@
 
 ### 新功能
 
+- **登录、注册页面重做（参考 Trancy）**：顶部“‹ 返回”；登录页大标题“欢迎回来”与副标题；“继续使用 Google”按钮；带图标的邮箱、密码输入框；金色主按钮“使用邮箱登录 / 使用邮箱注册”；登录页底部“忘记密码？”与金色“注册账号”；注册页新增“以游客身份使用”、金色“已有账号，立即登录”与服务条款说明。注册不再需要重复输入密码。不提供 Apple 登录
+- **Google 登录**：点击“继续使用 Google”在授权窗口中登录（基于 Supabase OAuth 与 Chrome identity 接口）。Supabase 尚未开启 Google 登录时，提示“尚未开启 Google 登录”，不会弹出报错窗口
 - **账户：注册与登录**：面板 → 设置 → 账户，用邮箱和密码注册、登录；支持邮箱验证、忘记密码、退出登录；登录状态自动保持，令牌快过期时自动续期
 - **Pro 会员订阅**：账户页“升级 Pro”提供月付、年付，点击后在新标签页打开 Stripe 安全支付；支付完成后几秒内自动变为 Pro 会员，标题栏的版本标签换成金色“Pro”标识，设置页账户行也显示 Pro
 - **管理订阅**：Pro 会员可在账户页打开 Stripe 客户门户，更换方案、修改支付方式、取消订阅、下载发票；取消后显示“已取消续费，Pro 有效期至……”，付款失败时提示更新支付方式
@@ -45,7 +47,7 @@
 
 - **真实联调通过**：在本地 Supabase 与 Stripe 沙盒（GLIMMER 沙盒）上跑通注册、邮箱验证、登录、付款、webhook 同步、变为 Pro、到期取消；行级权限经真实数据库验证，用户无法把自己改成 Pro、无法伪造订阅
 - 新增 `tests/e2e_local_billing.py`：真实联调测试 15 项；Stripe 支付页与客户门户加载过慢时，自动改用 Stripe API 完成同样的付款与取消
-- `tests/e2e_account.py` 新增“开发版自动连接本地后端”检查（共 24 项）；`tests/e2e_real.py` 新增内置页面提前设为弹窗、版本显示与刷新提示（共 51 项）
+- `tests/e2e_account.py` 新增“开发版自动连接本地后端”检查，以及登录 / 注册新页面、Google 未开启提示、游客使用的检查（共 29 项）；`tests/e2e_real.py` 新增内置页面提前设为弹窗、版本显示与刷新提示（共 51 项）
 - 新增 `scripts/setup_stripe.py`：一键创建产品、月付 / 年付价格、客户门户配置并写入 `.env`，可重复执行
 - 新增 `tests/e2e_account.py`：用本地模拟的 Supabase 接口跑通未配置、注册、退出、各种错误提示、邮箱验证、忘记密码、令牌自动续期、升级、支付返回变为 Pro、管理订阅、取消续费，共 22 项
 - 新增后端单元测试 `supabase/functions/_shared/billing_test.ts`：订阅状态映射、支付完成、取消续费、订阅删除、重复事件、Stripe 签名验证，共 9 项
@@ -55,7 +57,8 @@
 
 - 新增 `scripts/write_build_info.sh`：把当前提交编号与时间写入 `build.json`（已被 git 忽略）；可选的 `scripts/install-hooks.sh` 安装 git 钩子，在提交、合并、切换分支后自动更新
 - 新增 `supabase/` 后端代码：数据库迁移（含行级权限）、4 个 Edge Functions；新增 `src/shared/config.js` 填写 Supabase 地址
-- 扩展新增 `scripting` 权限，用于给已打开的网页补装翻译功能
+- 扩展新增 `scripting` 权限，用于给已打开的网页补装翻译功能；新增 `identity` 权限，用于 Google 登录
+- `supabase/config.toml` 新增 Google 登录配置（默认关闭）与扩展回调地址 `https://*.chromiumapp.org/**`；`src/shared/config.js` 新增服务条款、隐私政策链接配置
 
 ### 文档
 

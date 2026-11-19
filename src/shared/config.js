@@ -6,6 +6,12 @@ export const BACKEND = {
   supabaseAnonKey: '',
 };
 
+// 注册页底部“服务条款”“隐私政策”的链接；留空时只显示文字，不可点击
+export const TERMS = {
+  terms: '',
+  privacy: '',
+};
+
 // 本地开发后端：`npx supabase start` 启动的本机 Supabase。
 // 公开密钥是 Supabase CLI 的固定默认值，每台开发机都一样，只能访问本机，不是机密。
 // 仅当插件以“加载已解压的扩展程序”方式加载（开发版）、且上面的 BACKEND 未填写时自动使用。

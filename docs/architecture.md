@@ -515,6 +515,7 @@ erDiagram
 | 面板实现 | 同一扩展页面兼作弹窗与 iframe 抽屉 | 内容脚本中再实现一套 UI | 一套代码；可直接用扩展 API 和共享模块；与网页隔离 |
 | 后端 | Supabase（Auth + 数据库 + Edge Functions）+ Stripe | 自建 Node 服务器 | 账户、数据库、函数一站托管，免运维；Stripe 负责合规收款 |
 | 扩展连接后端 | 直接调用 REST 接口 | 打包 Supabase SDK | 不引入构建步骤；所需接口很少 |
+| 第三方登录 | Supabase OAuth + `chrome.identity.launchWebAuthFlow` | 在网页中打开 Supabase 登录页 | 授权在 Chrome 管理的独立窗口中完成，令牌直接回到扩展，不经过任何网页 |
 | 会员状态写入 | 只由 Stripe webhook 经 Edge Function 写入 | 支付返回页由客户端上报 | 客户端可以伪造；webhook 有签名，是唯一可信来源 |
 | 支付界面 | Stripe Checkout 与客户门户（跳转） | 在面板内嵌入支付表单 | 不接触银行卡信息，免去 PCI 合规；退款、发票、换卡由 Stripe 提供 |
 | Microsoft 引擎 | Azure 官方 API | Edge 免费鉴权接口 | 后者已下线（返回 404），且属非官方用法 |

@@ -76,6 +76,7 @@ const handlers = {
   accountSignUp: (m) => account.signUp(m),
   accountSignIn: (m) => account.signIn(m),
   accountSignOut: () => account.signOut(),
+  accountOAuth: (m) => account.signInWithOAuth(m),
   accountReset: (m) => account.resetPassword(m),
   billingCheckout: (m) => account.checkout(m),
   billingPortal: () => account.openPortal(),

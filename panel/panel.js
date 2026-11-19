@@ -2,6 +2,7 @@
 import { getSettings, saveSettings, ENGINES, hostMatches } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES, getLang } from '../src/shared/languages.js';
 import { buildShort } from '../src/shared/build.js';
+import { TERMS } from '../src/shared/config.js';
 
 const qs = new URLSearchParams(location.search);
 const MODE = qs.get('mode') === 'drawer' ? 'drawer' : 'popup';
@@ -47,6 +48,9 @@ const IC = {
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
   crown: svg('<path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z"/>', 16),
   card: svg('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>', 18),
+  google: `<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`,
+  mail: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', 18),
+  lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/>', 18),
   refresh: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>', 16),
 };
 
@@ -390,24 +394,37 @@ const VIEWS = {
       return `${header('账户')}<div class="body"><div class="warn">账户服务尚未配置。开发者需要在 <code>src/shared/config.js</code> 中填写 Supabase 项目地址和 anon key，详见 <code>docs/backend.md</code>。</div></div>`;
     }
 
-    // ---- 未登录：登录 / 注册 ----
+    // ---- 未登录：登录 / 注册（参考 Trancy：Google 登录 + 邮箱密码，金色主按钮） ----
     if (!acct.loggedIn) {
       const signup = auth.mode === 'signup';
-      return `${header('账户')}
-      <div class="body">
-        <div class="auth-tabs">
-          <button class="${signup ? '' : 'on'}" data-act="authMode" data-mode="signin">登录</button>
-          <button class="${signup ? 'on' : ''}" data-act="authMode" data-mode="signup">注册</button>
-        </div>
+      const google = `<button class="oauth" type="button" data-act="oauth" data-provider="google" ${auth.busy ? 'disabled' : ''}>${IC.google}<span>继续使用 Google</span></button>`;
+      const fields = `
+          <label class="ifield"><span class="iicon">${IC.mail}</span>
+            <input type="email" name="email" autocomplete="email" placeholder="邮箱" value="${esc(auth.email)}" required /></label>
+          <label class="ifield"><span class="iicon">${IC.lock}</span>
+            <input type="password" name="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? '密码（至少 6 位）' : '密码'}" minlength="6" required /></label>`;
+      const submitText = auth.busy ? '请稍候…' : signup ? '使用邮箱注册' : '使用邮箱登录';
+      const terms = TERMS.terms || TERMS.privacy
+        ? `注册即表示你同意${TERMS.terms ? `<a href="${esc(TERMS.terms)}" target="_blank">《服务条款》</a>` : '《服务条款》'}，并已阅读${TERMS.privacy ? `<a href="${esc(TERMS.privacy)}" target="_blank">《隐私政策》</a>` : '《隐私政策》'}。`
+        : '注册即表示你同意《服务条款》，并已阅读《隐私政策》。';
+      return `<header class="hd"><button class="back" data-act="back" title="返回">${IC.back}</button><span class="hd-back">返回</span></header>
+      <div class="body auth">
+        <h2 class="auth-title">${signup ? '注册账号' : '欢迎回来'}</h2>
+        ${signup ? '' : '<p class="auth-sub">请先登录账号，以便使用微光翻译的完整功能</p>'}
+        ${google}
         <form class="auth-form" id="authForm" novalidate>
-          <label>邮箱<input type="email" name="email" autocomplete="email" placeholder="you@example.com" value="${esc(auth.email)}" required /></label>
-          <label>密码<input type="password" name="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? '至少 6 位' : ''}" minlength="6" required /></label>
-          ${signup ? '<label>确认密码<input type="password" name="password2" autocomplete="new-password" required /></label>' : ''}
+          ${fields}
           ${msg}
-          <button class="primary submit" type="submit" ${auth.busy ? 'disabled' : ''}>${auth.busy ? '请稍候…' : signup ? '注册' : '登录'}</button>
+          <button class="gold submit" type="submit" ${auth.busy ? 'disabled' : ''}>${submitText}</button>
         </form>
-        ${signup ? '' : '<button class="link center" data-act="forgot">忘记密码？</button>'}
-        <div class="hint center">登录后可订阅 Pro 会员。账户由 Supabase 提供，密码不会保存在扩展中。</div>
+        ${
+          signup
+            ? `<button class="outline" data-act="guest">以游客身份使用</button>
+               <button class="link gold-link" data-act="authMode" data-mode="signin">已有账号，立即登录</button>
+               <p class="terms">${terms}</p>`
+            : `<div class="auth-links"><button class="link" data-act="forgot">忘记密码？</button>
+               <button class="link gold-link" data-act="authMode" data-mode="signup">注册账号</button></div>`
+        }
         ${beNote}
       </div>`;
     }
@@ -541,7 +558,7 @@ function setBusy(on) {
   const btn = $('#authForm .submit');
   if (!btn) return render();
   btn.disabled = on;
-  btn.textContent = on ? '请稍候…' : auth.mode === 'signup' ? '注册' : '登录';
+  btn.textContent = on ? '请稍候…' : auth.mode === 'signup' ? '使用邮箱注册' : '使用邮箱登录';
 }
 
 async function busy(fn) {
@@ -564,7 +581,6 @@ async function submitAuth(form) {
   auth.email = email;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showMsg('邮箱格式不正确', 'err');
   if (password.length < 6) return showMsg('密码至少需要 6 位', 'err');
-  if (auth.mode === 'signup' && password !== f.get('password2')) return showMsg('两次输入的密码不一致', 'err');
 
   let done = false;
   let confirmSent = false;
@@ -630,6 +646,21 @@ document.addEventListener('click', async (e) => {
       return close();
     case 'openExt':
       return send('openExtensionsPage');
+    case 'oauth':
+      return busy(async () => {
+        await send('accountOAuth', { provider: d.provider });
+        await loadAccount();
+        auth.msg = '';
+        auth.mode = 'signin';
+        render();
+        toast('登录成功');
+      });
+    case 'guest':
+      auth.msg = '';
+      auth.mode = 'signin'; // 下次进入账户页时显示登录页
+      view = 'home';
+      history = [];
+      return render();
     case 'authMode':
       auth.mode = d.mode;
       auth.msg = '';

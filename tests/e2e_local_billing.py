@@ -154,10 +154,9 @@ async def main():
 
         print('[1] 注册与邮箱验证（真实本地 Supabase）')
         email, pw = f'buyer-{uuid.uuid4().hex[:6]}@test.local', 'secret123'
-        await pp.locator('[data-mode=signup]').click()
+        await pp.locator('[data-act=authMode][data-mode=signup]').click()
         await pp.fill('[name=email]', email)
         await pp.fill('[name=password]', pw)
-        await pp.fill('[name=password2]', pw)
         await pp.locator('.submit').click()
         await wait_for(lambda: pp.locator('.msg.ok').count(), 15)
         check('注册后提示查收验证邮件', '验证邮件已发送' in await pp.locator('.msg').inner_text())

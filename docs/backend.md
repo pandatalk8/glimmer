@@ -68,6 +68,27 @@ npx supabase db push
 
 ---
 
+### 开启 Google 登录（可选）
+
+登录页的“继续使用 Google”需要一个 Google OAuth 客户端：
+
+**第一步，创建客户端。** 打开 [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create Credentials → OAuth client ID，类型选 **Web application**。首次使用需要先配置 OAuth consent screen（应用名称填“微光翻译”，用户类型选 External）。
+
+**第二步，填写回调地址。** Authorized redirect URIs 填 Supabase 的回调地址：
+
+| 环境 | 回调地址 |
+| --- | --- |
+| 云端 | `https://<项目 ID>.supabase.co/auth/v1/callback` |
+| 本地 | `http://127.0.0.1:54321/auth/v1/callback` |
+
+保存后记下 Client ID 和 Client secret。
+
+**第三步，在 Supabase 中开启。** 云端：Authentication → Sign In / Providers → Google，打开并填入 Client ID 和 Client secret；再到 Authentication → URL Configuration 的 Redirect URLs 中加入 `https://*.chromiumapp.org/**`（扩展登录后的跳回地址）。本地：见 [本地运行指南](local-dev.md) 的 Google 登录一节。
+
+扩展的跳回地址形如 `https://<扩展 ID>.chromiumapp.org/supabase`，由 Chrome 的 `chrome.identity.getRedirectURL()` 生成；开发版的扩展 ID 随加载目录变化，所以允许列表使用通配符。
+
+---
+
 ## 三、准备 Stripe
 
 **第一步，开启测试模式。** 登录 [dashboard.stripe.com](https://dashboard.stripe.com)，右上角打开 “Test mode”。

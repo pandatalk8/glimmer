@@ -488,6 +488,144 @@ html[data-mode='drawer'] .main {
   white-space: nowrap;
 }
 
+/* ---------- 登录 / 注册（参考 Trancy） ---------- */
+.hd-back {
+  font-size: 18px;
+  font-weight: 500;
+}
+.body.auth {
+  padding: 28px 24px 24px;
+  gap: 14px;
+}
+.auth-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.auth-sub {
+  margin: -2px 0 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.oauth,
+.outline {
+  width: 100%;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 12px;
+  border: 1px solid #3a3a3e;
+  background: transparent;
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 500;
+}
+.oauth:hover,
+.outline:hover {
+  background: var(--bg1);
+}
+.oauth:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.ifield {
+  display: flex;
+  align-items: stretch;
+  height: 50px;
+  border: 1px solid #3a3a3e;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.ifield:focus-within {
+  border-color: var(--gold);
+}
+.ifield .iicon {
+  width: 54px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border-right: 1px solid #3a3a3e;
+}
+.ifield input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 16px;
+  font-size: 15px;
+}
+.ifield input:focus {
+  box-shadow: none;
+}
+/* 覆盖 .auth-form label / input 的旧样式（纵向排列、带底色），保持“图标 | 输入框”横向一行 */
+.auth-form label.ifield {
+  flex-direction: row;
+  gap: 0;
+  color: var(--muted);
+}
+.auth-form .ifield input {
+  width: auto;
+  height: 100%;
+  padding: 0 16px;
+  background: transparent;
+  border: 0;
+}
+.gold {
+  width: 100%;
+  height: 50px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--gold);
+  color: #1c1a14;
+  font-size: 16px;
+  font-weight: 600;
+  transition: filter 0.15s;
+}
+.gold:hover {
+  filter: brightness(1.05);
+}
+.gold:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.body.auth .auth-form {
+  gap: 14px;
+}
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+}
+.auth-links .link,
+.body.auth > .link {
+  font-size: 15px;
+}
+.gold-link,
+.gold-link:hover {
+  color: var(--gold);
+}
+.body.auth > .gold-link {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.terms {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.terms a {
+  color: var(--muted);
+  text-decoration: underline;
+}
+
 /* ---------- 账户 ---------- */
 .chip.pro {
   display: inline-flex;

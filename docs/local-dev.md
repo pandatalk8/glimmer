@@ -224,6 +224,19 @@ npx supabase functions serve --env-file supabase/functions/.env
 | 2 | `src/shared/config.js` 的 `BACKEND` | 正式发布时填写的云端地址 |
 | 3 | 开发版自动使用本地后端 | 日常本地开发 |
 
+### 4.5.1 本地开启 Google 登录（可选）
+
+1. 按 [后端部署指南](backend.md) “开启 Google 登录”创建 OAuth 客户端，回调地址填 `http://127.0.0.1:54321/auth/v1/callback`
+2. 在项目根目录创建 `supabase/.env`（已被 git 忽略）：
+   ```bash
+   SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
+   SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=GOCSPX-xxx
+   ```
+3. 把 `supabase/config.toml` 中 `[auth.external.google]` 的 `enabled` 改为 `true`
+4. 重启本地 Supabase：`npx supabase stop && npx supabase start`
+
+之后在面板的登录页点击“继续使用 Google”即可。未开启时，点击会提示“尚未开启 Google 登录”。
+
 ### 4.6 跑通一遍
 
 | 步骤 | 操作 | 预期结果 |

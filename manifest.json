@@ -23,7 +23,7 @@
     "service_worker": "src/background/index.js",
     "type": "module"
   },
-  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting", "identity"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
