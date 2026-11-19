@@ -224,7 +224,16 @@ npx supabase functions serve --env-file supabase/functions/.env
 
 ### 4.5 让扩展连接本地后端
 
-**不需要任何操作。** 以“加载已解压的扩展程序”方式加载的开发版，如果 `src/shared/config.js` 没有填写云端地址，会自动连接本机 Supabase（`http://127.0.0.1:54321`，使用 Supabase CLI 固定的本地公开密钥）。
+> 目前 `src/shared/config.js` 已填写云端项目“glimmer”，插件默认连接云端，注册时验证邮件发到真实邮箱。本地后端的验证邮件不会发到真实邮箱，只能在 Mailpit（`http://127.0.0.1:54324`）中查看。
+
+要让插件改连本地后端，打开 `chrome://extensions` → 微光翻译 → “Service Worker”，在 Console 执行：
+
+```js
+chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' } })
+// 改回云端：chrome.storage.local.remove('backendOverride')
+```
+
+`config.js` 的 `BACKEND` 留空时，开发版会自动连接本机 Supabase，不需要上面这一步。
 
 打开面板 → 设置 → 账户，看到登录表单、底部注明“后端：本地开发（127.0.0.1:54321）”即连接成功。本地后端没有启动时，操作会提示“本地后端没有运行”。
 

@@ -197,6 +197,16 @@ export const BACKEND = {
 
 在 `chrome://extensions` 中重新加载扩展。打开面板 → 设置 → 账户，看到登录表单即表示连接成功。
 
+> **当前部署：** 云端项目“glimmer”（`btaihodwxgyhtbyjhbke`，美国东部）已完成上述全部步骤：两份迁移、5 个函数、9 个密钥、Stripe 沙盒 webhook（`/functions/v1/stripe-webhook`），`config.js` 已填写。`publishable` 公开密钥可以提交到仓库，`secret` / `service_role` 密钥不可以。
+
+**数据库直连失败时。** `db.<项目 ID>.supabase.co` 只有 IPv6 地址，在只支持 IPv4 的网络里 `supabase db push` 会报 `failed to connect to postgres`。可以改用管理接口执行迁移，不需要数据库密码：
+
+```bash
+npx supabase db query --remote --yes -f supabase/migrations/<迁移文件>.sql
+```
+
+**邮件发送限制。** Supabase 自带的邮件服务每小时只能发很少几封，且只发给项目团队成员的邮箱（用自己的账号测试没问题）。给其他用户开放注册前，必须在 Authentication → Emails → SMTP Settings 接入自己的邮件服务（如 Resend、SendGrid），否则其他人注册时收不到验证邮件。
+
 ---
 
 ## 六、跑通一次完整流程

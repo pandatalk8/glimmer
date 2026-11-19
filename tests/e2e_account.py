@@ -167,14 +167,21 @@ async def main():
 
         msg = lambda pp: pp.locator('.msg').inner_text()
 
-        print('[0] 开发版自动连接本地后端')
+        # config.js 填了云端地址时连云端；没填时开发版自动使用本地后端
+        import re as _re
+        cfg_url = _re.search(r"BACKEND = \{\s*supabaseUrl: '([^']*)'", open(os.path.join(ROOT, 'src/shared/config.js'), encoding='utf-8').read()).group(1)
+        print('[0] 默认后端：' + ('config.js 中的云端' if cfg_url else '开发版自动连接本地'))
         pp = await open_panel()
         st = await pp.evaluate("chrome.runtime.sendMessage({type:'accountState'}).then(r=>r.data)")
         be = st.get('backend') or {}
-        check('未做任何设置时，开发版自动使用本地后端', st['configured'] and be.get('source') == 'local-dev' and be.get('url') == 'http://127.0.0.1:54321', be)
+        if cfg_url:
+            check('未做任何设置时，使用 config.js 中的云端后端', st['configured'] and be.get('source') == 'config' and be.get('url') == cfg_url, be)
+        else:
+            check('未做任何设置时，开发版自动使用本地后端', st['configured'] and be.get('source') == 'local-dev' and be.get('url') == 'http://127.0.0.1:54321', be)
         await pp.locator('[data-go=account]').click()
         await pp.wait_for_timeout(300)
-        check('账户页注明“后端：本地开发”', '本地开发' in await pp.locator('.body').inner_text())
+        note = '本地开发' in await pp.locator('.body').inner_text()
+        check('账户页的“后端：本地开发”说明只在连本地时出现', note == (not cfg_url))
         await pp.close()
 
         print('\n[1] 后端未配置')

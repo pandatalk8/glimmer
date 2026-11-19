@@ -1,9 +1,11 @@
 // 后端配置：Supabase 项目地址与 anon key
 // 在 Supabase 后台 Project Settings → API 中复制。anon key 本身就是公开的（数据安全靠 RLS），可以随扩展发布。
 // 不要在这里填写 service_role key 或 Stripe 密钥。
+// 当前为 Supabase 云端项目“glimmer”。要改连本机后端，在扩展后台 Console 执行：
+// chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: LOCAL_DEV_BACKEND 中的密钥 } })
 export const BACKEND = {
-  supabaseUrl: '', // 例：https://abcdefghijklm.supabase.co
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://btaihodwxgyhtbyjhbke.supabase.co',
+  supabaseAnonKey: 'sb_publishable_YcPcX6PpDv3vxWOuutkCFA_MqNZKqx4',
 };
 
 // 注册页底部“服务条款”“隐私政策”的链接；留空时只显示文字，不可点击
