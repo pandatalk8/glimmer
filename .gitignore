@@ -6,6 +6,8 @@
 *.pem
 node_modules/
 tests/output/
+# 当前代码版本（scripts/write_build_info.sh 生成）
+build.json
 tests/.env.local
 .env*.local
 __pycache__/

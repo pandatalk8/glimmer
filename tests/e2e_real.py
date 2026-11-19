@@ -1,9 +1,9 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover input popup drawer toolbar always import style ctxmenu
+场景：wiki hn mdn hover input popup drawer toolbar build always import style ctxmenu
 """
-import asyncio, functools, http.server, os, sys, tempfile, threading
+import asyncio, functools, http.server, json, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -338,7 +338,44 @@ async def main():
             r = await sw.evaluate("""async ()=>{const t=(await chrome.tabs.query({})).find(t=>!t.url);
               const how=await self.__glimmerActionClick(t);const p=await chrome.action.getPopup({tabId:t.id});return [how,p]}""")
             check('浏览器内置页面退回弹窗形态', r[1].endswith('panel/panel.html'), r)
+            # 提前设定：不点击也已是弹窗模式（点击后再判断会因手势过期打不开）
+            pre = await sw.evaluate("""async ()=>{const ts=await chrome.tabs.query({});const out={};
+              for (const t of ts){out[t.url||'(内置页)']=await chrome.action.getPopup({tabId:t.id});} return out}""")
+            check('内置页、插件设置页提前设为弹窗，普通网页保持侧面板', any(k=='(内置页)' and v.endswith('panel.html') for k,v in pre.items())
+                  and all(v=='' for k,v in pre.items() if k.startswith('http')), pre)
             await cp.close()
+
+        # ---------- 当前加载版本与“需要刷新”提示 ----------
+        if run('build'):
+            print('\n[build] 版本显示与刷新提示')
+            bpath = os.path.join(ROOT, 'build.json')
+            original = open(bpath, encoding='utf-8').read() if os.path.exists(bpath) else None
+            op = await ctx.new_page()
+            try:
+                await op.goto(f'chrome-extension://{eid}/options/options.html#advanced')
+                await op.wait_for_timeout(800)
+                info = await op.evaluate("chrome.runtime.sendMessage({type:'buildInfo'}).then(r=>r.data)")
+                commit = json.loads(original)['commit'] if original else None
+                shown = await op.locator('#buildVal').inner_text()
+                check('设置页显示当前加载的版本', (commit or info['loaded']['fp']) in shown, shown)
+                check('刚加载时不提示刷新', not info['stale'] and await op.locator('#staleBar').is_hidden())
+                with open(bpath, 'w', encoding='utf-8') as f:  # 模拟磁盘上的代码已更新
+                    f.write(json.dumps({'commit': 'abc1234', 'time': '2026-11-20T10:00:00+08:00', 'branch': 'dev'}))
+                await op.reload()
+                await op.wait_for_timeout(800)
+                shown = await op.locator('#buildVal').inner_text()
+                check('代码更新后设置页提示需要刷新', await op.locator('#staleBar').is_visible() and 'abc1234' in shown, shown)
+                pp = await ctx.new_page()
+                await pp.goto(f'chrome-extension://{eid}/panel/panel.html')
+                await pp.wait_for_timeout(600)
+                check('代码更新后面板首页显示刷新提示', await pp.locator('.stale-bar').count() == 1)
+                await pp.close()
+            finally:
+                if original is None:
+                    os.remove(bpath)
+                else:
+                    open(bpath, 'w', encoding='utf-8').write(original)
+            await op.close()
 
         # ---------- 总是翻译网站规则 ----------
         if run('always'):

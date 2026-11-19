@@ -46,6 +46,10 @@ git merge --ff-only worktree-immersive-translator   # 拉入最新改动
 
 **第四步（可选），配置翻译引擎。** 面板 → 设置 → API Key，在完整设置页的“翻译服务”中填入 DeepL、DeepSeek 等 Key，点击“测试连接”。各家 Key 的获取方式见 [配置指南](configuration.md)。
 
+**确认加载的是最新代码：** 完整设置页 → 高级 → “当前版本”，显示如 `v0.2.0 · c59de6a · 11-19 12:00`，与项目目录中执行 `git log --oneline -1` 的提交编号一致即为最新。磁盘上的代码更新后还没刷新插件时，设置页顶部和面板首页会显示黄色的“需要刷新”提示。
+
+提交编号来自项目根目录的 `build.json`，执行 `sh scripts/write_build_info.sh` 生成。想在每次提交、合并、切换分支后自动更新，执行一次 `sh scripts/install-hooks.sh` 安装 git 钩子（可选）。没有 `build.json` 时显示代码指纹，同样能判断是否需要刷新。
+
 **改了代码之后：**
 
 | 改动的文件 | 需要做什么 |
@@ -208,18 +212,17 @@ npx supabase functions serve --env-file supabase/functions/.env
 
 ### 4.5 让扩展连接本地后端
 
-不需要修改 `src/shared/config.js`。在扩展后台写入一个覆盖地址即可：
+**不需要任何操作。** 以“加载已解压的扩展程序”方式加载的开发版，如果 `src/shared/config.js` 没有填写云端地址，会自动连接本机 Supabase（`http://127.0.0.1:54321`，使用 Supabase CLI 固定的本地公开密钥）。
 
-1. 打开 `chrome://extensions`，在微光翻译卡片上点击“Service Worker”，打开后台的开发者工具
-2. 在 Console 中执行（替换为你的 anon key 或 publishable key）：
+打开面板 → 设置 → 账户，看到登录表单、底部注明“后端：本地开发（127.0.0.1:54321）”即连接成功。本地后端没有启动时，操作会提示“本地后端没有运行”。
 
-```js
-chrome.storage.local.set({
-  backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: '你的 anon key' },
-});
-```
+连接哪个后端的优先级：
 
-3. 打开面板 → 设置 → 账户，看到登录表单即连接成功
+| 优先级 | 来源 | 用途 |
+| --- | --- | --- |
+| 1 | 扩展存储中的 `backendOverride` | 测试，或临时指定其他地址（在扩展后台 Console 执行 `chrome.storage.local.set({ backendOverride: { supabaseUrl, supabaseAnonKey } })`，`chrome.storage.local.remove('backendOverride')` 取消） |
+| 2 | `src/shared/config.js` 的 `BACKEND` | 正式发布时填写的云端地址 |
+| 3 | 开发版自动使用本地后端 | 日常本地开发 |
 
 ### 4.6 跑通一遍
 
@@ -247,9 +250,6 @@ stripe trigger customer.subscription.updated
 ### 4.7 用完之后
 
 ```bash
-# 扩展切回 config.js 中的云端地址：在后台 Console 执行
-chrome.storage.local.remove('backendOverride')
-
 # 停止本地 Supabase（数据会保留，下次 start 继续使用）
 npx supabase stop
 ```
@@ -264,7 +264,8 @@ npx supabase stop
 | --- | --- |
 | `npx supabase start` 报 “Cannot connect to the Docker daemon” | Docker Desktop 没有启动，打开后等它显示 running |
 | `supabase start` 报端口被占用 | 之前的实例没停：`npx supabase stop`，或在 Docker Desktop 中停止 `supabase_*` 容器 |
-| 账户页提示“账户服务尚未配置” | 4.5 的 `backendOverride` 没写入，或写在了网页的 Console 而不是扩展后台的 Console |
+| 账户页提示“账户服务尚未配置” | 插件不是以开发版方式加载，或 `backendOverride` 被设成了空地址：在扩展后台 Console 执行 `chrome.storage.local.remove('backendOverride')` |
+| 点击工具栏图标没反应 | 先看完整设置页“当前版本”是否提示需要刷新；在 `chrome://extensions` 点击插件的“刷新”，再点微光翻译卡片上的“错误”查看报错 |
 | 注册提示“无法连接账户服务” | 本地 Supabase 没在运行，执行 `npx supabase status` 检查 |
 | 收不到验证邮件 | 本地不会真的发邮件，去 `http://127.0.0.1:54324` 查看 |
 | 点击“月付”提示“缺少环境变量” | `supabase/functions/.env` 缺项，或启动函数时没加 `--env-file` |

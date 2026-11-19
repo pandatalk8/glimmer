@@ -163,7 +163,19 @@ async def main():
 
         msg = lambda pp: pp.locator('.msg').inner_text()
 
-        print('[1] 后端未配置')
+        print('[0] 开发版自动连接本地后端')
+        pp = await open_panel()
+        st = await pp.evaluate("chrome.runtime.sendMessage({type:'accountState'}).then(r=>r.data)")
+        be = st.get('backend') or {}
+        check('未做任何设置时，开发版自动使用本地后端', st['configured'] and be.get('source') == 'local-dev' and be.get('url') == 'http://127.0.0.1:54321', be)
+        await pp.locator('[data-go=account]').click()
+        await pp.wait_for_timeout(300)
+        check('账户页注明“后端：本地开发”', '本地开发' in await pp.locator('.body').inner_text())
+        await pp.close()
+
+        print('\n[1] 后端未配置')
+        # 用空地址覆盖，模拟正式版未填写 config.js 的情况
+        await sw.evaluate("()=>chrome.storage.local.set({backendOverride:{supabaseUrl:'',supabaseAnonKey:''}})")
         pp = await open_panel()
         check('设置页顶部显示账户行“登录 / 注册”', '登录 / 注册' in await pp.locator('[data-go=account]').inner_text())
         await pp.locator('[data-go=account]').click()

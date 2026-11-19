@@ -5,3 +5,11 @@ export const BACKEND = {
   supabaseUrl: '', // 例：https://abcdefghijklm.supabase.co
   supabaseAnonKey: '',
 };
+
+// 本地开发后端：`npx supabase start` 启动的本机 Supabase。
+// 公开密钥是 Supabase CLI 的固定默认值，每台开发机都一样，只能访问本机，不是机密。
+// 仅当插件以“加载已解压的扩展程序”方式加载（开发版）、且上面的 BACKEND 未填写时自动使用。
+export const LOCAL_DEV_BACKEND = {
+  supabaseUrl: 'http://127.0.0.1:54321',
+  supabaseAnonKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+};

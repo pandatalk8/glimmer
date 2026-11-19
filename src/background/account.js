@@ -1,20 +1,58 @@
 // 账户与订阅：直接调用 Supabase 的 REST 接口（Auth / PostgREST / Edge Functions），不依赖 SDK
 // 会话保存在 chrome.storage.local 的 auth；供界面显示的账户状态保存在 account
-import { BACKEND } from '../shared/config.js';
+import { BACKEND, LOCAL_DEV_BACKEND } from '../shared/config.js';
 
 const AUTH_KEY = 'auth';
 const ACCOUNT_KEY = 'account';
 
-// 开发 / 测试时可在 storage.local 的 backendOverride 中覆盖地址
-async function backend() {
+let devInstall;
+/** 是否以“加载已解压的扩展程序”方式加载（开发版） */
+async function isDevInstall() {
+  if (devInstall === undefined) {
+    try {
+      devInstall = (await chrome.management.getSelf()).installType === 'development';
+    } catch {
+      devInstall = false;
+    }
+  }
+  return devInstall;
+}
+
+const filled = (c) => !!(c?.supabaseUrl && c?.supabaseAnonKey);
+
+/**
+ * 决定连接哪个后端，优先级：
+ * 1. storage.local 的 backendOverride（测试或手动指定；整体替换，填空值可模拟“未配置”）
+ * 2. config.js 的 BACKEND（正式发布时填写的云端地址）
+ * 3. 开发版且以上都没有：自动连接本机 Supabase（LOCAL_DEV_BACKEND）
+ */
+async function resolveBackend() {
   const { backendOverride } = await chrome.storage.local.get('backendOverride');
-  const cfg = { ...BACKEND, ...(backendOverride || {}) };
-  if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+  if (backendOverride) return { cfg: backendOverride, source: 'override' };
+  if (filled(BACKEND)) return { cfg: BACKEND, source: 'config' };
+  if (await isDevInstall()) return { cfg: LOCAL_DEV_BACKEND, source: 'local-dev' };
+  return { cfg: BACKEND, source: 'none' };
+}
+
+async function backend() {
+  const { cfg, source } = await resolveBackend();
+  if (!filled(cfg)) {
     const e = new Error('账户服务尚未配置（需要在 src/shared/config.js 填写 Supabase 地址）');
     e.code = 'not_configured';
     throw e;
   }
-  return { url: cfg.supabaseUrl.replace(/\/$/, ''), key: cfg.supabaseAnonKey };
+  const url = cfg.supabaseUrl.replace(/\/$/, '');
+  return { url, key: cfg.supabaseAnonKey, source, local: /\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url) };
+}
+
+/** 供界面显示：当前连接的后端 */
+export async function backendInfo() {
+  try {
+    const { url, source, local } = await backend();
+    return { url, source, local };
+  } catch {
+    return null;
+  }
 }
 
 export async function isConfigured() {
@@ -44,7 +82,7 @@ function friendly(msg, status) {
 }
 
 async function call(path, { method = 'GET', body, token, headers = {} } = {}) {
-  const { url, key } = await backend();
+  const { url, key, local } = await backend();
   let res;
   try {
     res = await fetch(url + path, {
@@ -60,6 +98,7 @@ async function call(path, { method = 'GET', body, token, headers = {} } = {}) {
       signal: AbortSignal.timeout(20000),
     });
   } catch (e) {
+    if (local) throw new Error('本地后端没有运行：请打开 Docker Desktop，并在项目目录执行 npx supabase start');
     throw new Error(e?.name === 'TimeoutError' ? '连接账户服务超时' : '无法连接账户服务，请检查网络');
   }
   const text = await res.text();
@@ -177,7 +216,7 @@ export async function accountState() {
   const configured = await isConfigured();
   const auth = await getAuth();
   const { account } = await chrome.storage.local.get(ACCOUNT_KEY);
-  return { configured, loggedIn: !!auth, email: auth?.user?.email || null, account: account || null };
+  return { configured, loggedIn: !!auth, email: auth?.user?.email || null, account: account || null, backend: await backendInfo() };
 }
 
 /** 是否为 Pro 会员（供以后需要付费的功能判断） */

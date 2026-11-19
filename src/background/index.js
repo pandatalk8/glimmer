@@ -123,28 +123,110 @@ async function ensureContent(tabId) {
   }
 }
 
+// ---------- 当前加载的代码版本 ----------
+// 从文件夹加载的开发版：磁盘上的文件更新后，Chrome 里运行的后台与网页脚本仍是旧的，直到点击“刷新”。
+// 加载时为关键文件算一个指纹并记下；之后再算一次，不同即说明需要刷新插件。
+const BUILD_FILES = [
+  'build.json', 'manifest.json',
+  'src/background/index.js', 'src/background/account.js', 'src/background/cache.js',
+  'src/background/engines/mt.js', 'src/background/engines/llm.js', 'src/background/engines/util.js',
+  'src/content/content.js', 'src/content/content.css', 'src/content/ui.css',
+  'src/content/youtube.js', 'src/content/yt-hook.js',
+  'src/shared/settings.js', 'src/shared/languages.js', 'src/shared/config.js', 'src/shared/build.js',
+  'panel/panel.html', 'panel/panel.js', 'panel/panel.css',
+  'options/options.html', 'options/options.js', 'options/options.css', 'styles/theme.css',
+];
+
+async function readText(path) {
+  try {
+    const r = await fetch(chrome.runtime.getURL(path), { cache: 'no-store' });
+    return r.ok ? await r.text() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function codeFingerprint() {
+  const parts = await Promise.all(BUILD_FILES.map(readText));
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('\u0000')));
+  return [...new Uint8Array(hash)].slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function readBuild() {
+  try {
+    return JSON.parse(await readText('build.json'));
+  } catch {
+    return null; // 没有 build.json：未生成过，只显示版本号与指纹
+  }
+}
+
+async function snapshotBuild() {
+  const loadedBuild = { fp: await codeFingerprint(), build: await readBuild(), at: Date.now() };
+  await chrome.storage.local.set({ loadedBuild });
+  return loadedBuild;
+}
+chrome.runtime.onInstalled.addListener(snapshotBuild); // 首次加载与每次点击“刷新”
+chrome.runtime.onStartup.addListener(snapshotBuild); // 浏览器重启
+
+async function buildInfo() {
+  let { loadedBuild } = await chrome.storage.local.get('loadedBuild');
+  if (!loadedBuild) loadedBuild = await snapshotBuild();
+  const fp = await codeFingerprint();
+  return {
+    version: chrome.runtime.getManifest().version,
+    loaded: loadedBuild,
+    disk: { fp, build: await readBuild() },
+    stale: fp !== loadedBuild.fp,
+  };
+}
+handlers.buildInfo = buildInfo;
+// 打开扩展管理页并定位到本插件，方便点击“刷新”
+handlers.openExtensionsPage = () => chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id }).then(() => true);
+
+const PANEL = 'panel/panel.html';
+
+// 只有普通网页（http / https / 本地文件）能嵌入侧面板；
+// 插件自己的设置页、chrome:// 页面、新标签页等不能嵌入，拿不到 URL 的也按不能处理
+const canEmbed = (url) => /^(https?|file):/i.test(url || '');
+
+// 提前为每个标签页设定点击图标时的行为：能嵌入的网页触发 onClicked 打开抽屉，
+// 其余直接由 Chrome 打开弹窗。必须提前设定：点击后再异步判断，用户手势会过期，openPopup 会失败，表现为“点了没反应”
+function syncPopup(tabId, url) {
+  return chrome.action.setPopup({ tabId, popup: canEmbed(url) ? '' : PANEL }).catch(() => {});
+}
+
+async function syncAllTabs() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map((t) => syncPopup(t.id, t.url || t.pendingUrl)));
+}
+
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === 'loading' || info.url) syncPopup(tabId, info.url || tab.url || tab.pendingUrl);
+});
+chrome.tabs.onCreated.addListener((tab) => syncPopup(tab.id, tab.url || tab.pendingUrl));
+chrome.runtime.onStartup.addListener(syncAllTabs);
+chrome.runtime.onInstalled.addListener(syncAllTabs); // 安装或刷新插件时，给已打开的标签页补设
+
 async function onActionClick(tab) {
   if (!tab?.id) return 'none';
   if (await ensureContent(tab.id)) {
     await chrome.tabs.sendMessage(tab.id, { type: 'toggleDrawer' }, { frameId: 0 });
     return 'drawer';
   }
-  // 无法嵌入面板的页面：本标签页改用弹窗形态
-  await chrome.action.setPopup({ tabId: tab.id, popup: 'panel/panel.html' });
+  // 网页地址正常但禁止注入（如 Chrome 应用商店、未允许访问的本地文件）：
+  // 此标签页改为弹窗模式，下次点击直接弹出；这一次手势已过期，用独立小窗口打开面板，保证点击有反应
+  await chrome.action.setPopup({ tabId: tab.id, popup: PANEL });
   try {
     await chrome.action.openPopup();
     return 'popup';
   } catch {
-    return 'none';
+    await chrome.windows.create({ url: chrome.runtime.getURL(PANEL), type: 'popup', width: 420, height: 640 });
+    return 'window';
   }
 }
 chrome.action.onClicked.addListener(onActionClick);
 self.__glimmerActionClick = onActionClick; // 供端到端测试调用
-
-// 标签页跳转到新网页时，恢复为“点击图标开关侧面板”
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === 'loading') chrome.action.setPopup({ tabId, popup: '' }).catch(() => {});
-});
+self.__glimmerCanEmbed = canEmbed;
 
 // ---------- 右键菜单 & 快捷键 ----------
 chrome.runtime.onInstalled.addListener((details) => {

@@ -1,6 +1,7 @@
 // 面板：工具栏弹窗与网页内侧边抽屉共用同一页面
 import { getSettings, saveSettings, ENGINES, hostMatches } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES, getLang } from '../src/shared/languages.js';
+import { buildShort } from '../src/shared/build.js';
 
 const qs = new URLSearchParams(location.search);
 const MODE = qs.get('mode') === 'drawer' ? 'drawer' : 'popup';
@@ -58,6 +59,7 @@ let page = { supported: false, active: false };
 let view = qs.get('view') || 'home';
 let history = [];
 let quick = { text: '', out: '', err: false };
+let build = null; // 当前加载的代码版本（buildInfo）
 let pageWords = []; // 生词本中出现在当前网页上的词
 let expanded = false; // “展开释义”
 try {
@@ -303,8 +305,12 @@ const VIEWS = {
     } else {
       wordsCard = `<div class="wl-head"><span>本页生词 <em class="num">${pageWords.length}</em></span>${expandBtn()}</div>${wordRows(pageWords, expanded)}`;
     }
+    const staleBar = build?.stale
+      ? `<div class="stale-bar"><span>插件代码已更新，请刷新插件后再检查</span><button class="link" data-act="openExt">去刷新 ${IC.chev}</button></div>`
+      : '';
     return `${header()}
     <div class="body">
+      ${staleBar}
       <div class="grid2">
         <button class="stat" data-go="words"><span class="si si-pink">${IC.heart}</span>
           <span><b>${words.length}</b><small>生词本</small></span></button>
@@ -371,12 +377,14 @@ const VIEWS = {
       </div>
       <div class="group">
         ${link('options', '', IC.sliders, '完整设置')}
-        ${link('options', 'advanced', IC.info, '关于', 'v' + VERSION)}
+        ${link('options', 'advanced', IC.info, '关于', ['v' + VERSION, buildShort(build)].filter(Boolean).join(' · '))}
       </div>
     </div>`;
   },
 
   account() {
+    const be = acct.backend;
+    const beNote = be?.local ? `<div class="hint center">后端：本地开发（${esc(be.url.replace(/^https?:\/\//, ''))}）</div>` : '';
     const msg = auth.msg ? `<div class="msg ${auth.kind}">${esc(auth.msg)}</div>` : '';
     if (!acct.configured) {
       return `${header('账户')}<div class="body"><div class="warn">账户服务尚未配置。开发者需要在 <code>src/shared/config.js</code> 中填写 Supabase 项目地址和 anon key，详见 <code>docs/backend.md</code>。</div></div>`;
@@ -400,6 +408,7 @@ const VIEWS = {
         </form>
         ${signup ? '' : '<button class="link center" data-act="forgot">忘记密码？</button>'}
         <div class="hint center">登录后可订阅 Pro 会员。账户由 Supabase 提供，密码不会保存在扩展中。</div>
+        ${beNote}
       </div>`;
     }
 
@@ -440,6 +449,7 @@ const VIEWS = {
             ${a.hasBilling ? `<button class="link" data-act="portal">查看账单与发票 ${IC.chev}</button>` : ''}`
       }
       <button class="ghost wide danger" data-act="signOut">退出登录</button>
+      ${beNote}
     </div>`;
   },
 
@@ -618,6 +628,8 @@ document.addEventListener('click', async (e) => {
   switch (d.act) {
     case 'close':
       return close();
+    case 'openExt':
+      return send('openExtensionsPage');
     case 'authMode':
       auth.mode = d.mode;
       auth.msg = '';
@@ -745,6 +757,7 @@ try {
 await refreshPage();
 await refreshPageWords();
 await loadAccount();
+build = await send('buildInfo').catch(() => null);
 if (acct.loggedIn) loadAccount(true).then(render); // 后台刷新会员状态
 if (view.startsWith('pick:')) history = ['settings'];
 render();

@@ -330,3 +330,28 @@ h1 {
     min-width: 0;
   }
 }
+
+/* 版本与“需要刷新”提示 */
+.stale-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  background: rgba(233, 196, 106, 0.1);
+  color: var(--gold);
+}
+.stale-bar[hidden] {
+  display: none;
+}
+.build-val {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  text-align: right;
+}
+.build-val.stale {
+  color: var(--gold);
+}

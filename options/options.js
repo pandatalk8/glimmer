@@ -1,11 +1,26 @@
 import { getSettings, saveSettings, ENGINES, DEFAULT_SETTINGS, DEFAULT_PROMPT } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES } from '../src/shared/languages.js';
+import { buildLabel, buildShort } from '../src/shared/build.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 let S = await getSettings();
 
 $('#ver').textContent = 'v' + chrome.runtime.getManifest().version;
+
+// 当前加载的版本；磁盘代码已更新但未刷新插件时提示
+async function showBuild() {
+  const r = await chrome.runtime.sendMessage({ type: 'buildInfo' }).catch(() => null);
+  if (!r?.ok) return;
+  const info = r.data;
+  $('#ver').textContent = buildLabel(info);
+  $('#buildVal').textContent = buildLabel(info);
+  $('#buildVal').classList.toggle('stale', info.stale);
+  if (info.stale) $('#buildVal').textContent += `（磁盘上已是 ${buildShort(info, 'disk')}，需要刷新）`;
+  $('#staleBar').hidden = !info.stale;
+}
+showBuild();
+$('#openExt').onclick = () => chrome.runtime.sendMessage({ type: 'openExtensionsPage' });
 
 function toast(msg) {
   const t = $('#toast');

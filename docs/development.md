@@ -79,6 +79,8 @@
 | `getState` | 返回 `{ active, units, host }`，仅顶层 frame 响应 |
 | `toggleDrawer` | `view`（可选），打开或收起网页内侧边面板 |
 | `ping` | 返回 `true`，后台用来判断内容脚本是否已注入 |
+| `buildInfo`（发给后台） | 返回 `{ version, loaded, disk, stale }`：插件加载时与当前磁盘上的代码指纹和 `build.json`，`stale` 为真表示需要刷新插件 |
+| `openExtensionsPage`（发给后台） | 打开 `chrome://extensions` 并定位到本插件 |
 | `pageWords` | `words: string[]`，返回其中出现在当前网页上的词（单词整词匹配、短语子串匹配，不区分大小写） |
 
 内容脚本发给面板：整页翻译开关变化时广播 `{ type: 'pageStateChanged', active }`，面板据此同步“翻译此页面”开关。
@@ -127,7 +129,7 @@
 
 ### 账户与后端
 
-`src/background/account.js` 直接调用 Supabase REST 接口，`src/shared/config.js` 填写项目地址。开发和测试时可以不改 `config.js`，而是在后台写入覆盖地址：
+`src/background/account.js` 直接调用 Supabase REST 接口。连接哪个后端按优先级决定：`backendOverride`（扩展存储）> `config.js` 的 `BACKEND` > 开发版自动使用 `LOCAL_DEV_BACKEND`（本机 `127.0.0.1:54321`）。所以本地开发什么都不用改；测试或临时指向其他地址时，在后台写入覆盖地址：
 
 ```js
 chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:54321', supabaseAnonKey: '...' } })

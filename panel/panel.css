@@ -470,6 +470,24 @@ html[data-mode='drawer'] .main {
   margin-top: 10px;
 }
 
+/* 代码已更新、需要刷新插件的提示 */
+.stale-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  background: rgba(233, 196, 106, 0.1);
+  color: var(--gold);
+  font-size: 13px;
+}
+.stale-bar .link {
+  color: var(--gold);
+  white-space: nowrap;
+}
+
 /* ---------- 账户 ---------- */
 .chip.pro {
   display: inline-flex;

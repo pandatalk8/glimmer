@@ -25,6 +25,10 @@
     </aside>
 
     <main>
+      <div class="stale-bar" id="staleBar" hidden>
+        <span>插件代码已更新，但 Chrome 里运行的还是旧版本。请到扩展管理页点击微光翻译的“刷新”按钮。</span>
+        <button class="ghost" id="openExt">打开扩展管理页</button>
+      </div>
       <!-- 基本设置 -->
       <section id="general" class="sec">
         <h1>基本设置</h1>
@@ -142,6 +146,7 @@
         <h1>高级</h1>
         <div class="card form">
           <div class="field"><label>翻译缓存 <span class="hint">相同文本不会重复请求，节省额度</span></label><button class="ghost" id="clearCache">清除缓存</button></div>
+          <div class="field"><label>当前版本 <span class="hint">与项目目录中 git log --oneline -1 显示的提交编号一致，即为最新代码</span></label><span id="buildVal" class="build-val"></span></div>
           <div class="field"><label>快捷键</label><button class="ghost" id="shortcuts">自定义快捷键</button></div>
           <div class="field">
             <label>备份</label>
