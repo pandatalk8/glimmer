@@ -39,6 +39,9 @@
 
 ### 测试
 
+- **真实联调通过**：在本地 Supabase 与 Stripe 沙盒（GLIMMER 沙盒）上跑通注册、邮箱验证、登录、付款、webhook 同步、变为 Pro、到期取消；行级权限经真实数据库验证，用户无法把自己改成 Pro、无法伪造订阅
+- 新增 `tests/e2e_local_billing.py`：真实联调测试 15 项；Stripe 支付页与客户门户加载过慢时，自动改用 Stripe API 完成同样的付款与取消
+- 新增 `scripts/setup_stripe.py`：一键创建产品、月付 / 年付价格、客户门户配置并写入 `.env`，可重复执行
 - 新增 `tests/e2e_account.py`：用本地模拟的 Supabase 接口跑通未配置、注册、退出、各种错误提示、邮箱验证、忘记密码、令牌自动续期、升级、支付返回变为 Pro、管理订阅、取消续费，共 22 项
 - 新增后端单元测试 `supabase/functions/_shared/billing_test.ts`：订阅状态映射、支付完成、取消续费、订阅删除、重复事件、Stripe 签名验证，共 9 项
 - `tests/e2e_real.py` 新增 9 项：工具栏开关侧面板、贴边全高、本页生词数量与排序、展开释义、已掌握、取消收藏、内置页面退回弹窗；共 46 项

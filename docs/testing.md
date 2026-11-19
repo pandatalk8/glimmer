@@ -43,6 +43,7 @@ python3 tests/e2e.py --headed   # 弹出浏览器窗口，可以看到每一步
 | `tests/e2e_real.py` | 真实网站与交互：维基百科、Hacker News、MDN、悬停、输入框、面板、侧边抽屉与生词本、工具栏开关侧面板与本页生词、网站规则、导入、样式、右键菜单（46 项） | 网络 | 约 2 分钟 |
 | `tests/e2e_account.py` | 账户与订阅：注册、登录、错误提示、令牌续期、升级、支付返回变 Pro、管理订阅（22 项） | 无（使用模拟的 Supabase 接口） | 约 30 秒 |
 | `deno test … supabase/functions/` | 后端订阅逻辑与 Stripe 签名验证（9 项） | 已安装 Deno | 约 5 秒 |
+| `tests/e2e_local_billing.py` | 真实联调：本地 Supabase + Stripe 测试 / 沙盒，注册、邮箱验证、付款、变为 Pro、到期取消（15 项） | 本地后端已启动（见 [本地运行指南](local-dev.md)） | 约 2 分钟 |
 | `tests/e2e_engines.py` | 用你的 API Key 测试各引擎：测试连接、批量 8 段顺序、中译英、整页翻译 | `tests/.env.local` 中的 Key | 每个引擎约 10–30 秒 |
 | `tests/e2e_youtube.py` | YouTube 真实字幕（会弹出浏览器窗口） | 网络 | 约 40 秒 |
 

@@ -19,6 +19,7 @@ python3 tests/e2e.py          # 核心回归，14 项
 python3 tests/e2e_real.py     # 真实网站与交互，46 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），22 项
 deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅逻辑，9 项
+python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），15 项
 python3 tests/e2e_engines.py  # 用 tests/.env.local 中的 Key 测试引擎
 python3 tests/check_diagrams.py  # 文档中的 Mermaid 图能否正常渲染
 ```
