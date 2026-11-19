@@ -19,9 +19,12 @@ Deno.serve(async (req) => {
     if (error) throw error;
     if (!profile.stripe_customer_id) return json({ error: '还没有订阅记录' }, 404);
 
+    // 可选：用接口创建的门户配置（bpc_…）；不设置时使用 Stripe 后台保存的默认配置
+    const configuration = Deno.env.get('STRIPE_PORTAL_CONFIGURATION') || undefined;
     const session = await stripeClient().billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
       return_url: `${publicUrl()}/functions/v1/billing-return?status=portal`,
+      ...(configuration ? { configuration } : {}),
     });
     return json({ url: session.url });
   } catch (e) {

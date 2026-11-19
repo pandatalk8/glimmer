@@ -154,7 +154,18 @@ stripe prices create -d product=prod_xxx -d unit_amount=4800 -d currency=usd -d 
 
 也可以在 Stripe 后台（右上角打开 Test mode）手动创建，效果相同。
 
-**第三步，开启客户门户**：Stripe 后台测试模式 → Settings → Billing → Customer portal，允许取消订阅、允许更换方案，保存。不做这一步，“管理订阅”会报错。
+**第三步，创建客户门户配置**（“管理订阅”需要）。用命令直接创建，不必去后台找设置页：
+
+```bash
+stripe billing_portal configurations create \
+  -d "features[subscription_cancel][enabled]=true" \
+  -d "features[payment_method_update][enabled]=true" \
+  -d "features[invoice_history][enabled]=true" \
+  -d "business_profile[headline]=微光翻译 Pro"
+# 记下返回的 id：bpc_xxx，填入 .env 的 STRIPE_PORTAL_CONFIGURATION
+```
+
+也可以在 Stripe 后台保存默认的客户门户设置（Settings → Billing → Customer portal；沙盒账号的菜单位置可能不同，可在后台顶部搜索“customer portal”），这样就不用填 `STRIPE_PORTAL_CONFIGURATION`。
 
 **第四步，在终端 2 转发支付通知（保持运行）：**
 
@@ -174,6 +185,7 @@ STRIPE_WEBHOOK_SECRET=whsec_xxx          # 上一步 stripe listen 打印的值
 STRIPE_PRICE_MONTHLY=price_xxx
 STRIPE_PRICE_YEARLY=price_xxx
 PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+STRIPE_PORTAL_CONFIGURATION=bpc_xxx       # 4.3 第三步创建的客户门户配置（可选）
 ```
 
 `PUBLIC_SUPABASE_URL` 只在本地需要：函数在 Docker 容器里看到的地址是 `http://kong:8000`，浏览器打不开，支付完成后的返回页必须用本机地址。`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由 CLI 自动注入，不用填。
@@ -248,7 +260,7 @@ npx supabase stop
 | 点击“月付”提示“缺少环境变量” | `supabase/functions/.env` 缺项，或启动函数时没加 `--env-file` |
 | 付款后跳转到 `http://kong:8000/…` 打不开 | `.env` 中没有设置 `PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`，补上后重启终端 3 |
 | 付款成功但一直是免费版 | 看终端 2：没有事件说明 `stripe listen` 没在运行；显示 `[400]` 说明 `.env` 中的 `STRIPE_WEBHOOK_SECRET` 与 `stripe listen` 打印的不一致（每次重启 `stripe listen` 可能变化） |
-| “管理订阅”报错 | Stripe 测试模式下没有保存客户门户设置（4.3 第三步） |
+| “管理订阅”报错 | 没有客户门户配置：按 4.3 第三步创建并填入 `STRIPE_PORTAL_CONFIGURATION`，或在 Stripe 后台保存默认设置 |
 | 想把某个用户重置为免费版 | Studio 的 SQL Editor 执行 `update profiles set plan = 'free' where email = '…';` |
 
 本地跑通后，部署到云端的步骤见 [后端部署指南](backend.md)。

@@ -102,7 +102,7 @@ npx supabase secrets set \
   STRIPE_PRICE_YEARLY=price_xxx
 ```
 
-`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由平台自动注入，不需要手动设置。可选的 `PUBLIC_SUPABASE_URL` 用于拼接支付返回页地址，云端不需要设置，只在本地运行时需要（见本地运行指南）。
+`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 由平台自动注入，不需要手动设置。可选的 `STRIPE_PORTAL_CONFIGURATION`（`bpc_…`）指定客户门户配置，适合不方便在后台保存默认门户设置时，用 `stripe billing_portal configurations create` 创建后填入。可选的 `PUBLIC_SUPABASE_URL` 用于拼接支付返回页地址，云端不需要设置，只在本地运行时需要（见本地运行指南）。
 
 **第二步，部署 4 个函数。**
 
