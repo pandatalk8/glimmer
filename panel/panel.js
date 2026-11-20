@@ -75,6 +75,11 @@ let acct = { configured: false, loggedIn: false, email: null, account: null };
 let auth = { mode: 'signin', email: '', msg: '', kind: '', busy: false };
 const plan = () => acct.account?.plan || 'free';
 const isMember = () => plan() !== 'free';
+const USAGE_WARN = 80; // Premium+ 本月用量达到这个百分比时提醒
+const usagePct = () => {
+  const u = acct.account?.usage || {};
+  return Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+};
 // 升级提示卡：点到需要会员的功能时，在面板内说明需要的等级、价格和权益
 const OFFER = {
   premium: { price: '$29 / 年', perks: ['DeepL、Microsoft 专业翻译', '生词本不限数量', '生词本云同步，换设备不丢'] },
@@ -359,10 +364,17 @@ const VIEWS = {
       ? `<div class="engine-bar"><div>${IC.crown}<span>${esc(eng.name)} 需要${acct.loggedIn ? ` ${PLAN_NAME[eng.tier]} 会员` : '登录并开通会员'}，正在使用 Google 翻译</span></div>
           <div class="btns"><button class="gold sm" data-act="premium">${acct.loggedIn ? '开通会员' : '查看方案'}</button><button class="ghost sm" data-act="useGoogle">改用 Google</button></div></div>`
       : '';
+    // Premium+ 用量接近或达到上限：首页提醒一次（点击查看账户页）
+    const up = plan() === 'premium_plus' ? usagePct() : 0;
+    const usageBar =
+      up >= USAGE_WARN
+        ? `<button class="usage-bar" data-go="account">${up >= 100 ? '本月 AI 额度已用完，大模型暂停到下月 1 日' : `本月 AI 用量已用 ${up}%`} ${IC.chev}</button>`
+        : '';
     return `${header()}
     <div class="body">
       ${staleBar}
       ${pausedBar}
+      ${usageBar}
       <div class="grid2">
         <button class="stat" data-go="words"><span class="si si-pink">${IC.heart}</span>
           <span><b>${words.length}</b><small>生词本</small></span></button>
@@ -485,16 +497,20 @@ const VIEWS = {
     let status = '';
     if (member && a.status === 'past_due') status = '付款失败，请在“管理订阅”中更新支付方式';
     else if (member && a.cancelAtPeriodEnd) status = `已取消续费，${PLAN_NAME[plan()]} 有效期至 ${date(a.periodEnd)}`;
-    else if (member) status = `${a.status === 'trialing' ? '试用中，' : ''}下次续费：${date(a.periodEnd)}`;
+    else if (member && a.periodEnd) status = `${a.status === 'trialing' ? '试用中，' : ''}下次续费：${date(a.periodEnd)}`;
     else if (a.status === 'canceled') status = '订阅已结束';
     const initial = esc((acct.email || '?').trim()[0].toUpperCase());
     const u = a.usage || {};
     const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + ' 百万' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n || 0));
     const pct = Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+    const usageHint =
+      pct >= 100 ? '本月额度已用完：大模型暂停到下月 1 日，期间网页翻译自动改用 Google；DeepL、Microsoft 照常可用'
+      : pct >= USAGE_WARN ? `已用 ${pct}%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译`
+      : '每月 1 日重置；用完后可继续使用 Google、DeepL、Microsoft';
     const usageCard =
       plan() === 'premium_plus'
-        ? `<div class="card box usage"><div class="line"><span class="t">本月 AI 用量</span><span class="s">${fmt(u.tokens)} / ${fmt(u.limit || 20e6)} Token</span></div>
-           <div class="bar"><i style="width:${pct}%"></i></div><div class="hint">每月 1 日重置；用完后可继续使用 Google、DeepL、Microsoft</div></div>`
+        ? `<div class="card box usage ${pct >= USAGE_WARN ? 'warn' : ''}"><div class="line"><span class="t">本月 AI 用量</span><span class="s">${fmt(u.tokens)} / ${fmt(u.limit || 20e6)} Token</span></div>
+           <div class="bar"><i style="width:${pct}%"></i></div><div class="hint">${usageHint}</div></div>`
         : '';
 
     return `${header('账户')}

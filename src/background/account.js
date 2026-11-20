@@ -260,7 +260,7 @@ export async function refreshAccount() {
     status: p.subscription_status || null,
     periodEnd: p.current_period_end || null,
     cancelAtPeriodEnd: !!p.cancel_at_period_end,
-    hasBilling: !!p.stripe_customer_id,
+    hasBilling: !!p.subscription_status, // 有过订阅才有账单；只点过“开通”但没付款的不算
     updatedAt: Date.now(),
   };
   await chrome.storage.local.set({ [ACCOUNT_KEY]: account });

@@ -12,6 +12,7 @@
     <aside class="side">
       <div class="brand"><img src="../icons/icon48.png" alt="" /><span>微光翻译</span></div>
       <nav id="nav">
+        <a href="#account" data-sec="account">账户与会员</a>
         <a href="#general" data-sec="general">基本设置</a>
         <a href="#engines" data-sec="engines">翻译服务</a>
         <a href="#style" data-sec="style">译文样式</a>
@@ -28,6 +29,13 @@
         <span>插件代码已更新，但 Chrome 里运行的还是旧版本。请到扩展管理页点击微光翻译的“刷新”按钮。</span>
         <button class="ghost" id="openExt">打开扩展管理页</button>
       </div>
+      <!-- 账户与会员 -->
+      <section id="account" class="sec">
+        <h1>账户与会员</h1>
+        <p class="sub">不登录也能免费使用全部翻译方式。开通会员可使用 DeepL 与 AI 大模型，并在多台设备同步生词本。</p>
+        <div class="card form" id="acctBox"></div>
+      </section>
+
       <!-- 基本设置 -->
       <section id="general" class="sec">
         <h1>基本设置</h1>
@@ -151,6 +159,9 @@
     </main>
 
     <div id="toast" class="toast"></div>
+    <div class="modal" id="loginModal" hidden>
+      <div class="sheet"><button class="x" id="closeLogin" title="关闭">✕</button><iframe id="loginFrame" title="登录"></iframe></div>
+    </div>
     <script type="module" src="options.js"></script>
   </body>
 </html>

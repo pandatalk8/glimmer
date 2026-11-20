@@ -226,6 +226,21 @@ async def main():
               and LLM_CALLS[0]['engine'] == 'deepseek' and LLM_CALLS[0]['path'] == '/functions/v1/translate', LLM_CALLS)
         used = await sw.evaluate("chrome.storage.local.get('account').then(r=>r.account.usage.tokens)")
         check('返回的本月用量写入账户状态', used == 1234, used)
+        # Premium+ 用量超过 80%：面板首页提醒，账户页用量卡变色
+        await sw.evaluate("""async()=>{const {account}=await chrome.storage.local.get('account');
+          await chrome.storage.local.set({account:{...account,usage:{...account.usage,tokens:17000000,limit:20000000}}})}""")
+        pn = await ctx.new_page()
+        await pn.set_viewport_size({'width': 400, 'height': 640})
+        await pn.goto(f'chrome-extension://{eid}/panel/panel.html?view=home')
+        await pn.wait_for_timeout(500)
+        ub = await pn.locator('.usage-bar').inner_text() if await pn.locator('.usage-bar').count() else ''
+        check('用量 85%：面板首页提示“本月 AI 用量已用 85%”', '本月 AI 用量已用 85%' in ub, ub)
+        await pn.locator('.usage-bar').click()
+        await pn.wait_for_timeout(300)
+        hint = await pn.locator('.usage.warn .hint').inner_text() if await pn.locator('.usage.warn').count() else ''
+        check('点击进入账户页：用量卡变为金色并说明用完后的影响', '用完后大模型会暂停到下月 1 日' in hint, hint)
+        await pn.screenshot(path=f'{OUTPUT}/usage-warn.png')
+        await pn.close()
 
         await ctx.close()
 

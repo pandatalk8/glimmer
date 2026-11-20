@@ -31,6 +31,68 @@ async function showDevBackend() {
   $('#devBackendSel').querySelector('[value=cloud]').disabled = !d.cloudConfigured;
   $('#devBackendHint').textContent = (d.url || '未配置') + (d.local ? '，邮件在 Mailpit（127.0.0.1:54324）查看' : '');
 }
+// ---------- 账户与会员 ----------
+const escA = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const PLAN_LABEL = { free: '免费版', premium: 'Premium 会员', premium_plus: 'Premium+ 会员' };
+const fmtDate = (s) => (s ? new Date(s).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
+const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + ' 百万' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n || 0));
+async function showAccount() {
+  const r = await chrome.runtime.sendMessage({ type: 'accountState' }).catch(() => null);
+  const st = r?.data || {};
+  const box = $('#acctBox');
+  if (!st.configured) {
+    box.innerHTML = '<div class="field"><label>账户服务尚未配置</label></div>';
+    return;
+  }
+  if (!st.loggedIn) {
+    box.innerHTML = `<div class="field"><label>未登录 <span class="hint">账号用于开通会员和同步生词本</span></label>
+      <div class="btns"><button class="ghost" data-acct="plans">查看会员方案</button><button class="primary" data-acct="login">登录 / 注册</button></div></div>`;
+    return;
+  }
+  const a = st.account || { plan: 'free' };
+  const member = a.plan !== 'free';
+  const status = !member ? '' : a.cancelAtPeriodEnd ? `已取消续费，有效期至 ${fmtDate(a.periodEnd)}` : a.periodEnd ? `下次续费：${fmtDate(a.periodEnd)}` : '';
+  const u = a.usage || {};
+  const pct = Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+  box.innerHTML = `<div class="field"><label>${escA(st.email || '')} <span class="hint">${escA(status)}</span></label>
+      <span class="plan-tag ${member ? 'on' : ''}" id="acctPlan">${PLAN_LABEL[a.plan]}</span></div>
+    ${a.plan === 'premium_plus' ? `<div class="field"><label>本月 AI 用量 <span class="hint">${fmtTok(u.tokens)} / ${fmtTok(u.limit || 20e6)} Token · 每月 1 日重置</span></label>
+      <span class="usage-pct ${pct >= 80 ? 'warn' : ''}">${pct}%</span></div>` : ''}
+    <div class="field"><label>会员</label><div class="btns">
+      ${a.plan === 'free' ? '<button class="primary" data-acct="plans">开通会员</button>' : ''}
+      ${a.plan === 'premium' ? '<button class="primary" data-acct="plans">升级到 Premium+</button>' : ''}
+      ${a.hasBilling ? '<button class="ghost" data-acct="portal">管理订阅</button>' : ''}
+      <button class="ghost" data-acct="logout">退出登录</button></div></div>`;
+}
+showAccount();
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area !== 'local' || (!c.auth && !c.account)) return;
+  if (c.auth?.newValue && !c.auth?.oldValue) closeLogin(); // 弹窗中登录成功
+  showAccount();
+});
+function closeLogin() {
+  $('#loginModal').hidden = true;
+  $('#loginFrame').src = 'about:blank';
+}
+$('#closeLogin').onclick = closeLogin;
+$('#loginModal').addEventListener('click', (e) => e.target.id === 'loginModal' && closeLogin());
+$('#acctBox').addEventListener('click', async (e) => {
+  const act = e.target.closest('[data-acct]')?.dataset.acct;
+  if (act === 'login') {
+    $('#loginFrame').src = chrome.runtime.getURL('panel/panel.html?view=account');
+    $('#loginModal').hidden = false;
+  }
+  if (act === 'plans') chrome.runtime.sendMessage({ type: 'openPremium' });
+  if (act === 'portal') {
+    const r = await chrome.runtime.sendMessage({ type: 'billingPortal' });
+    if (!r?.ok) toast(r?.error || '打开失败');
+  }
+  if (act === 'logout') {
+    await chrome.runtime.sendMessage({ type: 'accountSignOut' });
+    toast('已退出登录');
+  }
+});
+
 showDevBackend();
 $('#devBackendSel').onchange = async (e) => {
   const r = await chrome.runtime.sendMessage({ type: 'devBackend', target: e.target.value });
@@ -146,7 +208,7 @@ $('#engineCards').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
   const id = btn.closest('.engine').dataset.id;
-  if (btn.dataset.act === 'premium') return chrome.tabs.create({ url: chrome.runtime.getURL('premium/premium.html') });
+  if (btn.dataset.act === 'premium') return chrome.runtime.sendMessage({ type: 'openPremium' });
   if (btn.dataset.act === 'use') {
     S = await saveSettings({ engine: id });
     renderEngines();

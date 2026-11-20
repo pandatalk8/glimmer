@@ -783,6 +783,34 @@ html[data-mode='drawer'] .main {
   height: 13px;
 }
 /* AI 用量 */
+.usage.warn {
+  border-color: rgba(233, 196, 106, 0.55);
+}
+.usage.warn .bar i {
+  background: var(--gold);
+}
+.usage.warn .hint {
+  color: var(--gold);
+}
+.usage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  background: rgba(233, 196, 106, 0.08);
+  color: var(--gold);
+  font-size: 13px;
+  text-align: left;
+}
+.usage-bar svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
 .usage .bar {
   height: 6px;
   margin: 10px 0 6px;
