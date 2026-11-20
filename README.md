@@ -13,10 +13,11 @@
 | [架构设计说明](docs/architecture.md) | 分层架构、核心模块设计、数据流、关键决策与取舍、性能、安全、演进方向 |
 | [配置指南](docs/configuration.md) | 引擎与会员等级、全部设置项说明、导入导出、快捷键 |
 | [测试指南](docs/testing.md) | 自动化测试命令、手动测试清单、问题排查 |
+| [产品需求文档](docs/requirements.md) | 产品定位、会员方案、按模块编号的功能需求（含验收要点、对应测试用例、完成状态）、非功能需求、待决策事项 |
 | [交互设计](docs/ux-design.md) | 产品心智模型、页面跳转、用户状态矩阵、关键流程与文案规范 |
 | [测试用例](docs/test-cases.md) | 给测试人员：按用户全旅程（注册 → 免费翻译 → 开通会员 → 付费功能 → 取消）逐条验证，含会员权限矩阵与测试账号 |
 | [开发指南](docs/development.md) | 架构、消息协议、整页翻译实现、新增引擎步骤、调试与发布 |
-| [常见问题](docs/faq.md) | 安装使用、引擎报错、YouTube 字幕、隐私 |
+| [常见问题](docs/faq.md) | 安装使用、引擎与会员提示、YouTube 字幕、隐私、账户与订阅 |
 | [示例配置](docs/settings.example.json) | 可在设置页“导入设置”直接导入 |
 
 ## 功能
@@ -26,13 +27,15 @@
 | 网页双语对照 | 点击悬浮球或 `Alt+A`，按段落插入译文；只翻译进入视口的内容，滚动时懒加载，动态内容自动补译 |
 | 仅显示译文 | 双语 / 仅译文一键切换（`Alt+S`），不改动原网页 DOM 结构 |
 | 译文样式 | 默认、下划线、虚线、高亮、引用条、弱化、彩色、学习模式（模糊，悬停显示） |
+| 欢迎页 | 首次安装打开：当场试一试双语效果、三步上手、快捷键 |
 | 侧边面板 | 点击工具栏图标，在网页内从右侧滑出，再点一次收起（也可从悬浮球菜单“面板”打开）；右侧图标栏切换首页、设置、生词本，常用设置一步直达 |
 | 划词翻译 | 选中文字出现图标，点击弹出翻译面板；可切换引擎、朗读、复制、收藏；中英自动互译 |
 | 生词本 | 在划词面板点 ☆ 收藏单词或句子；面板首页列出“本页生词”，可展开释义、标记已掌握、朗读、移除 |
 | 悬停翻译 | 按住 `Alt` 指向任意段落，只翻译这一段，再按一次还原 |
 | 输入框翻译 | 在输入框末尾连按三次空格，把内容翻译成指定语言（默认英文，需在设置中开启） |
 | YouTube 双语字幕 | 打开 CC 后自动显示原文 + 译文；自动生成字幕会合并成整句；鼠标移上字幕暂停，点击单词查词 |
-| 账户与会员 | 邮箱或 Google 注册登录；Premium（$29 / 年）与 Premium+（$6 / 月或 $69 / 年）两档会员，Premium 方案页选择订阅，Stripe 安全支付，可自助管理订阅（后端：Supabase + Stripe） |
+| 账户与会员 | 邮箱或 Google 注册登录；Premium（$29 / 年）与 Premium+（$6 / 月或 $69 / 年）两档会员，Premium 方案页选择订阅，Stripe 安全支付，付完自动回到原页面并告知会员等级；可自助管理订阅；Premium+ 用量达到 80% 时提醒（后端：Supabase + Stripe） |
+| 永不阻断阅读 | 默认引擎因未登录、等级不够或额度用完而不可用时，自动改用 Google 并提示一次原因 |
 | 生词本云同步 | 会员的生词本自动同步到账号，换设备登录即可恢复；免费版最多 100 个 |
 | 网站规则 | 总是翻译 / 永不翻译的域名列表 |
 | 翻译缓存 | IndexedDB 缓存 30 天，相同文本不重复请求 |
@@ -64,23 +67,26 @@ src/
                    content.css（页面内译文样式）  ui.css（Shadow DOM 内的 UI）
                    yt-hook.js（MAIN world 拦截字幕请求）  youtube.js（双语字幕渲染）
 panel/             侧边面板（工具栏弹窗与网页内抽屉共用同一页面）
-options/           设置页
+options/           完整设置页（含账户与会员分区）
 premium/           Premium 方案页
+welcome/           首次安装的欢迎页
 styles/theme.css   共享主题
 icons/
 docs/              配置、测试、开发、后端部署文档与示例配置
 supabase/          后端：数据库迁移、Edge Functions（翻译代理、Stripe 订阅）
-tests/             e2e.py（Playwright 端到端测试）  fixtures/（测试页）
+tests/             e2e.py · e2e_real.py · e2e_account.py · e2e_local_billing.py（Playwright 端到端测试）  fixtures/（测试页）
 ```
 
 ## 测试
 
 ```bash
 pip3 install playwright && python3 -m playwright install chromium
-python3 tests/e2e.py
+python3 tests/e2e.py          # 核心回归
+python3 tests/e2e_real.py     # 真实网站与交互
+python3 tests/e2e_account.py  # 账户与订阅（模拟后端）
 ```
 
-手动测试清单见 [测试指南](docs/testing.md)。
+全部测试命令和手动测试清单见 [测试指南](docs/testing.md)，测试人员按 [测试用例](docs/test-cases.md) 逐条验收。
 
 ## 工作原理
 
@@ -102,6 +108,7 @@ flowchart TB
 
 ## 已知限制
 
-- Microsoft 的 Edge 免费鉴权接口已下线，因此 Microsoft 需要 Azure Key
+- 会员引擎需要后端配置服务商 Key；目前云端只配置了 DeepL 和 DeepSeek
+- Supabase 自带邮件只发给项目成员，开放注册前需接入自有邮件服务
 - 段落内的链接、加粗等格式不会保留到译文中（译文为纯文本）
 - YouTube 字幕依赖播放器自身的字幕请求，需要先打开 CC；全屏时划词面板不可见

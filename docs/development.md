@@ -56,7 +56,7 @@
 | `translate` | `texts: string[]`，可选 `to`、`from`、`engine`、`noCache` | `string[]`，与输入一一对应。不传 `engine` 时用默认引擎，默认引擎用不了（未登录、等级不够、额度用完）时自动改用 Google，并向发起的网页发送一次 `engineNotice`；传了 `engine` 时照常报错，错误带 `code`（`login` / `upgrade` / `quota`） |
 | `getSettings` | — | 合并默认值后的完整设置 |
 | `saveSettings` | `patch`（部分设置，深合并） | 新设置 |
-| `meta` | — | `{ engines, languages }` |
+| `meta` | — | `{ engines, languages, plan }` |
 | `testEngine` | `engine` | `{ text, ms }` |
 | `clearCache` | — | `true` |
 | `openOptions` | — | — |
@@ -68,7 +68,9 @@
 | `accountSignUp` / `accountSignIn` | `email`、`password` | 注册返回 `{ needConfirm }`；登录返回 `{ account }` |
 | `accountSignOut` | — | 退出并清除本地会话 |
 | `accountReset` | `email` | 发送重置密码邮件 |
-| `billingCheckout` | `plan: 'premium' \| 'premium_plus'`、`interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页；已是会员时改为打开客户门户，返回 `{ opened: 'portal' }` |
+| `accountOAuth` | `provider`（如 `google`） | 用 `chrome.identity.launchWebAuthFlow` 完成第三方登录 |
+| `devBackend` | 可选 `target: 'local' \| 'cloud'` | 返回 `{ dev, cloudConfigured, url, source, local }`；传 `target` 时切换后端并退出登录（只有开发版可以） |
+| `billingCheckout` | `plan: 'premium' \| 'premium_plus'`、`interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页，并按消息来源记下发起位置（方案页 / 其他扩展页 / 网页），支付结束后回到那里；已是会员时改为打开客户门户，返回 `{ opened: 'portal' }` |
 | `billingPortal` | — | 在新标签页打开 Stripe 客户门户 |
 | `openPremium` | — | 打开方案页，并以 `?from=标签ID` 记下用户正在阅读的网页（开通成功后“开始使用”回到这里） |
 
@@ -85,6 +87,8 @@
 | `buildInfo`（发给后台） | 返回 `{ version, loaded, disk, stale }`：插件加载时与当前磁盘上的代码指纹和 `build.json`，`stale` 为真表示需要刷新插件 |
 | `openExtensionsPage`（发给后台） | 打开 `chrome://extensions` 并定位到本插件 |
 | `pageWords` | `words: string[]`，返回其中出现在当前网页上的词（单词整词匹配、短语子串匹配，不区分大小写） |
+| `engineNotice` | `text`、`action`：默认引擎不可用、已改用 Google 时在网页上提示（带“查看会员方案”按钮，额度用完时不带） |
+| `billingResult` | `text`、`ok`：从网页内侧面板发起的支付或门户结束后，在网页上提示结果 |
 
 内容脚本发给面板：整页翻译开关变化时广播 `{ type: 'pageStateChanged', active }`，面板据此同步“翻译此页面”开关。
 
@@ -114,7 +118,7 @@
 
 - 单元先交给 `IntersectionObserver`（上下预加载 600px），进入视口才插入占位并排队
 - 队列 80ms 合并一次，每批最多 40 段 / 5000 字符发给后台
-- 后台按引擎再拆分：Google 每段一个请求（并发 6），Azure 与 DeepL 每 50 段一个请求，大模型每 16 段 / 2400 字符一个请求（并发 3）
+- 后台按引擎再拆分：Google 每 64 段 / 4500 字符一个请求（并发 3）；会员引擎每 50 段 / 1 万字符发给后端翻译代理，代理中 Azure 与 DeepL 每 50 段一个请求，大模型每 16 段 / 2400 字符一个请求（并发 3）
 - `MutationObserver` 监听新增节点，400ms 防抖后只扫描新增部分
 
 ### 插入方式
@@ -142,7 +146,7 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 
 **会员等级。** `src/shared/settings.js` 导出 `PLAN_RANK`（free 0 / premium 1 / premium_plus 2）、`PLAN_NAME`、`FREE_WORD_LIMIT`（100）和 `canUse(plan, engine)`，面板、设置页、方案页都用它们决定标注和是否打开方案页。这只是界面提示；真正的限制在后端（`translate` 函数的 `checkAccess`、`words` 表的 RLS）。新增会员功能时两边都要改。
 
-**Premium 方案页。** `premium/premium.html` 是独立的扩展页面，从面板首页右上角的“Premium”标签或账户页“查看会员方案”打开。价格常量在 `premium.js` 的 `PRICE`，需与 Stripe 价格一致。未登录时点“开通”会弹出内嵌的登录页（`panel.html?view=account`），登录后自动继续所选方案。
+**Premium 方案页。** `premium/premium.html` 是独立的扩展页面，从面板首页右上角的“Premium”标签、升级提示卡、账户页或完整设置页的“查看会员方案”打开（都通过 `openPremium` 消息，以便记下来源网页）。支付成功后读取 `billingResult` 存储弹出成功弹窗。价格常量在 `premium.js` 的 `PRICE`，需与 Stripe 价格一致。未登录时点“开通”会弹出内嵌的登录页（`panel.html?view=account`），登录后自动继续所选方案。
 
 ### 侧边面板
 
@@ -161,7 +165,7 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 
 因为 `manifest.json` 不再设置 `default_popup`，点击图标才会触发 `chrome.action.onClicked`。
 
-面板是单页应用：`VIEWS` 中定义首页、设置、生词本和选项页四类视图，右侧图标栏切换视图。设置页的每一行都由 `PICKERS` 中的一项驱动，每项提供 `get(settings)` 读取当前值、`options()` 列出选项、`set(value)` 返回要保存的设置片段。新增一个面板设置项只需在 `PICKERS` 加一项，再在 `VIEWS.settings` 中加一行。
+面板是单页应用：`VIEWS` 中定义首页、设置、账户、生词本等视图，右侧图标栏切换视图。设置页的每一行都由 `PICKERS` 中的一项驱动，每项提供 `get(settings)` 读取当前值、`options()` 列出选项、`set(value)` 返回要保存的设置片段。新增一个面板设置项只需在 `PICKERS` 加一项，再在 `VIEWS.settings` 中加一行。
 
 抽屉以 iframe 加载，因此 `panel/*`、`styles/*`、`src/shared/*`、`icons/*` 都声明在 `web_accessible_resources` 中。
 

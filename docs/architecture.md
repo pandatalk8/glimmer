@@ -6,7 +6,7 @@
 
 本文记录微光翻译的整体架构、每个关键决策的理由和被放弃的方案。读完你应该能回答：某个功能为什么放在这一层，改动它会影响谁。
 
-> 本文讲“为什么这样设计”。具体怎么改代码、怎么调试，见 [开发指南](development.md)。
+> 本文讲“为什么这样设计”。产品要做什么见 [产品需求文档](requirements.md)，具体怎么改代码、怎么调试见 [开发指南](development.md)。
 >
 > 文中的图用 Mermaid 绘制，在 GitHub 上直接显示为图形；本地查看需要支持 Mermaid 的编辑器（如 VS Code 安装 “Markdown Preview Mermaid Support”）。修改图之后运行 `python3 tests/check_diagrams.py` 检查能否正常渲染。
 
@@ -23,7 +23,8 @@
 | 省额度 | 只翻译看得见的内容，相同文本不重复请求 |
 | 不破坏网页 | 在 React、Vue 等框架驱动的页面上开关翻译，页面功能不受影响 |
 | 零构建 | 原生 JavaScript，克隆后直接“加载已解压的扩展程序”即可运行 |
-| 账户可选 | 不登录也能使用全部翻译功能；账户只用于订阅 |
+| 账户可选 | 不登录也能使用全部翻译方式（Google）；账户用于开通会员和同步生词本 |
+| 永不阻断阅读 | 付费引擎不可用时自动改用 Google，翻译从不因会员状态整页失败 |
 | 付费状态可信 | 会员状态只由服务端根据 Stripe 通知写入，客户端无法篡改 |
 
 ### 约束
@@ -31,7 +32,7 @@
 - **Manifest V3。** 后台是 Service Worker，空闲约 30 秒后会被浏览器终止，不能依赖常驻内存
 - **内容脚本运行在隔离世界（isolated world）。** 能操作 DOM，但看不到网页自己的 JavaScript 变量，也拦截不到网页发出的请求
 - **网页环境不可控。** 任意 CSS、任意 DOM 结构、内容动态加载、严格的 CSP
-- **用户自带 Key。** 翻译请求从用户浏览器直接发往翻译服务商，不经过我们的后端；后端（Supabase）只负责账户与订阅
+- **扩展里没有服务商 Key。** 免费的 Google 翻译由浏览器直连；DeepL、Microsoft 和大模型由后端翻译代理调用，Key 只在服务器
 - **只用托管服务。** 不自建、不运维服务器：账户和数据库用 Supabase，服务端逻辑写成 Supabase Edge Functions，收款交给 Stripe
 
 这些约束直接决定了下面的分层。
@@ -53,7 +54,7 @@ flowchart TB
   end
 
   subgraph BG["扩展后台"]
-    PAGES["工具栏弹窗 · 完整设置页"]
+    PAGES["工具栏弹窗 · 完整设置页<br/>方案页 · 欢迎页"]
     ROUTER["index.js<br/>消息路由 · 工具栏点击"]
     CACHE["cache.js<br/>去重 · IndexedDB 缓存"]
     ENG["engines/<br/>翻译引擎适配"]
@@ -88,7 +89,7 @@ flowchart TB
 | 服务层 | `src/background/index.js`、`cache.js` | 消息路由、去重、缓存、工具栏点击 | 不关心 DOM，不关心具体引擎协议 |
 | 适配层 | `src/background/engines/*` | Google 翻译：把 `string[]` 翻译成 `string[]` | 不关心缓存和调用方 |
 | 账户层 | `src/background/account.js` | 会话保存与续期、读取会员状态与用量、打开支付页、调用翻译代理、生词本同步 | 不决定会员等级和用量，只读取 |
-| 界面与配置层 | `src/shared/*`、`panel/`、`options/` | 设置的定义与读写、面板与设置页界面 | 不参与翻译流程 |
+| 界面与配置层 | `src/shared/*`、`panel/`、`options/`、`premium/`、`welcome/` | 设置的定义与读写；面板、完整设置页、Premium 方案页、欢迎页 | 不参与翻译流程，不直接调用后端 |
 | 后端 | `supabase/` | 账户、会员数据、Stripe 支付与通知；会员引擎的翻译代理与用量计数；生词本云端存储 | 不保存翻译内容 |
 
 ```mermaid
@@ -320,7 +321,9 @@ flowchart TD
 
 iframe 中的面板是扩展源（`chrome-extension://`）页面，可以直接使用全部扩展 API 和共享模块，与网页 JavaScript 完全隔离；网页无法读取 iframe 内容。抽屉打开时，悬浮球随之左移到抽屉边缘，避免被遮挡。
 
-**状态同步** 不靠互相调用，而是靠两条广播：设置与生词写入 `chrome.storage.local`，所有面板监听 `onChanged` 刷新；整页翻译开关由内容脚本广播 `pageStateChanged`。因此无论从悬浮球、快捷键、弹窗还是抽屉操作，各处显示始终一致。
+**状态同步** 不靠互相调用，而是靠两条广播：设置、生词、账户写入 `chrome.storage.local`，所有面板、完整设置页、方案页监听 `onChanged` 刷新；整页翻译开关由内容脚本广播 `pageStateChanged`。因此无论从悬浮球、快捷键、弹窗还是抽屉操作，各处显示始终一致。
+
+**完整设置页复用面板的登录页。** 完整设置页的“账户与会员”分区未登录时，在弹窗 iframe 中加载 `panel.html?view=account`；登录成功写入 `auth`，设置页监听到后关闭弹窗并刷新分区。方案页的登录弹窗用的是同一个办法，登录逻辑只有一份。
 
 ### 3.9 后端：账户与订阅
 
@@ -396,6 +399,30 @@ sequenceDiagram
 **用量计数：** `usage_monthly` 以（用户、UTC 月份）为主键，`add_usage` 用一条 `insert … on conflict do update` 原子累加 Token、字符数和请求数，并发请求不会丢计数。超额检查在调用服务商之前做，所以单次请求最多超出额度一批的量。
 
 **可靠性：** Stripe 可能重复或乱序投递事件。每个事件 ID 先写入 `stripe_events`，主键冲突即视为已处理；同步时总是以订阅对象的当前状态为准（`checkout.session.completed` 会重新获取订阅），而不是累加变化，因此乱序也能得到正确结果。处理失败返回 500，让 Stripe 稍后重试。
+
+### 3.10 环境：云端、本地与测试
+
+同一份扩展代码要连三种后端：发布版连云端，开发者 review 时连本机 Docker 里的 Supabase，自动化测试连 Python 模拟的接口。连哪一个由 `account.js` 的 `resolveBackend()` 按优先级决定：
+
+| 优先级 | 来源 | 用途 |
+| --- | --- | --- |
+| 1 | 扩展存储中的 `backendOverride` | 测试注入模拟地址；开发版在完整设置页 → 高级 → “后端（开发版）”选择“本地”时写入 |
+| 2 | `src/shared/config.js` 的 `BACKEND` | 云端项目“glimmer”，发布版只用这一项 |
+| 3 | `LOCAL_DEV_BACKEND` | 未填写云端时，开发版（“加载已解压的扩展程序”）自动连 `127.0.0.1:54321` |
+
+切换后端时同时清除登录会话：两个后端的用户和令牌互不相通，带着云端令牌去请求本地会得到 401。“开发版”由 `chrome.management.getSelf()` 的 `installType === 'development'` 判断，商店安装的用户看不到切换入口。
+
+```mermaid
+flowchart LR
+  O{"backendOverride？"} -- "有" --> L1["该地址<br/>（本地 / 模拟）"]
+  O -- "无" --> B{"config.js BACKEND<br/>已填写？"}
+  B -- "是" --> C["云端 Supabase"]
+  B -- "否" --> D{"开发版？"}
+  D -- "是" --> L2["本地 127.0.0.1:54321"]
+  D -- "否" --> N["账户服务尚未配置<br/>免费功能照常"]
+```
+
+云端与本地共用同一套迁移、函数和 `config.toml`（Site URL、Google 登录、扩展跳回地址 `https://*.chromiumapp.org/**`），差别只在密钥文件：本地读 `supabase/functions/.env`，云端读 `supabase secrets`。
 
 ---
 
@@ -586,11 +613,11 @@ erDiagram
 
 ## 七、安全与隐私
 
-- **扩展里没有服务商 Key。** DeepL、Azure 和大模型的 Key 只在 Supabase 函数环境变量中；扩展只持有可公开的 anon key 和用户自己的登录令牌
+- **扩展里没有服务商 Key。** DeepL、Azure 和大模型的 Key 只在 Supabase 函数环境变量中；扩展只持有可公开的 publishable key 和用户自己的登录令牌
 - **翻译内容只转发不保存。** Google 翻译的文本由浏览器直接发给 Google；会员引擎的文本经后端 `translate` 函数转发给服务商，后端只记录字符数和 Token 数，不记录原文和译文
 - **滥用防护。** 翻译代理要求登录，按等级校验引擎，Premium+ 有每月 Token 上限，单次请求最多 100 段 / 2 万字符
 - **支付信息不经过我们。** 银行卡在 Stripe 的页面上填写，扩展和后端都接触不到；webhook 用 Stripe 签名验证，伪造的通知会被拒绝
-- **密钥分级。** 扩展里只有可公开的 Supabase anon key；service_role key、Stripe 密钥只存在 Supabase 的函数环境变量中
+- **密钥分级。** 扩展里只有可公开的 Supabase publishable key（旧称 anon key，数据安全靠 RLS）；secret / service_role key、Stripe 密钥、Google OAuth 密钥只存在 Supabase 的函数环境变量或被 git 忽略的 `.env` 中，提交前扫描
 - **数据库最小权限。** 所有表开启 RLS；用户只能读自己的 `profiles`、`subscriptions`、`usage_monthly`，没有写权限；`words` 只有会员能读写自己的行；`stripe_events` 对用户完全不可见；`add_usage` 只授权给 service role
 - **登录令牌。** 访问令牌和刷新令牌保存在扩展的 `storage.local`，网页无法读取；内容脚本虽然有权访问扩展存储，但代码中只有后台 `account.js` 读写令牌，面板只通过消息获取会员状态，不使用令牌；退出登录时同时通知 Supabase 作废会话。刷新令牌失效时自动退出，不会反复用无效令牌请求
 - **主世界最小化。** `yt-hook.js` 只转发字幕数据，不读取设置、不调用扩展 API；内容脚本接收消息时校验 `event.source === window` 和 `source` 标识
@@ -630,7 +657,8 @@ erDiagram
 | 用量超额有一批的误差 | 额度检查在调用前，最后一批可能略超 2000 万 | 按请求预估 Token 预扣，返回后多退少补 |
 | 会员状态是本地缓存 | 在 Stripe 后台直接操作订阅后，要等下次打开面板才更新 | 后台定时（如每 6 小时）刷新；需要服务端资源的会员功能始终以服务端校验为准 |
 | 免费版生词本只在本机 | 免费用户换电脑或重装扩展会丢失 | 降级为免费版后保留云端数据，重新开通后恢复 |
-| 尚未部署到云端 | 已在本地 Supabase + Stripe 沙盒真实联调，云端未部署 | 按 `docs/backend.md` 部署，填写 `config.js` 的 `BACKEND` |
+| 邮件依赖 Supabase 自带服务 | 只发给项目成员，每小时几封；其他用户注册收不到验证邮件 | 云端接入自有 SMTP（如 Resend） |
+| Stripe 仍是沙盒 | 只能用测试卡付款 | 上线前创建正式价格、webhook 与门户配置 |
 
 ---
 
