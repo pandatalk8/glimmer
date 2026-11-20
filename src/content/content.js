@@ -11,7 +11,7 @@
         chrome.runtime.sendMessage({ type, ...data }, (r) => {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
           if (r?.ok) resolve(r.data);
-          else reject(new Error(r?.error || '未知错误'));
+          else reject(Object.assign(new Error(r?.error || '未知错误'), { code: r?.code }));
         });
       } catch (e) {
         reject(new Error('扩展已更新，请刷新页面'));
@@ -426,16 +426,26 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
 
-  function toast(msg, kind = 'info') {
+  // action：{ label, run } 时在提示中显示一个按钮（如“查看会员方案”），停留时间更长
+  function toast(msg, kind = 'info', action = null) {
     const root = ensureUI();
     const t = h('div', { class: 'toast ' + kind }, esc(msg));
+    if (action) {
+      const b = h('button', { class: 'toast-act' }, esc(action.label));
+      b.onclick = () => {
+        action.run();
+        t.remove();
+      };
+      t.appendChild(b);
+    }
     root.appendChild(t);
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => {
       t.classList.remove('show');
       setTimeout(() => t.remove(), 300);
-    }, 3200);
+    }, action ? 8000 : 3200);
   }
+  const openPremium = () => send('openPremium').catch(() => {});
   G.toast = toast;
 
   // ---------- 侧边面板（iframe 加载扩展页 panel.html） ----------
@@ -564,7 +574,8 @@
     const RANK = { free: 0, premium: 1, premium_plus: 2 };
     const TIER = { premium: 'Premium', premium_plus: 'Premium+' };
     const locked = (e) => (RANK[e.tier] || 0) > (RANK[META?.plan] || 0);
-    let engine = S.engine;
+    // 默认引擎还没解锁时，面板先用 Google 翻译（与整页翻译的自动改用一致）
+    let engine = engines.find((e) => e.id === S.engine && !locked(e)) ? S.engine : 'google';
     let to = pickTarget(text);
 
     panel = h('div', { class: 'panel' });
@@ -605,7 +616,17 @@
         [result] = await send('translate', { texts: [text], to, engine });
         out.textContent = result;
       } catch (e) {
-        out.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+        if (e.code === 'upgrade' || e.code === 'login') {
+          // 手动选了未解锁的引擎：说明需要什么，而不是报错
+          out.innerHTML = `<div class="p-upsell"><span>${esc(e.message)}</span>
+            <div class="p-upsell-btns"><button class="p-up-go">查看会员方案</button><button class="p-up-back">改用 Google 翻译</button></div></div>`;
+          out.querySelector('.p-up-go').onclick = openPremium;
+          out.querySelector('.p-up-back').onclick = () => {
+            engine = 'google';
+            panel.querySelector('.p-engine').value = 'google';
+            run();
+          };
+        } else out.innerHTML = `<span class="err">${esc(e.message)}</span>`;
       }
     };
     run();
@@ -631,7 +652,7 @@
             markSaved(r.saved);
             toast(r.saved ? `已收藏到生词本（共 ${r.count} 个）` : '已从生词本移除');
           })
-          .catch((err) => toast(err.message, 'error'));
+          .catch((err) => toast(err.message, 'error', err.code === 'upgrade' ? { label: '查看会员方案', run: openPremium } : null));
       }
       if (act === 'copy') navigator.clipboard.writeText(result).then(() => toast('已复制'));
       if (act === 'retry') run();
@@ -774,6 +795,7 @@
     if (msg.type === 'getState') reply({ active: state.active, units: units.length, host });
     if (msg.type === 'ping') reply(true);
     if (msg.type === 'billingResult') toast(msg.text, msg.ok ? 'success' : 'info'); // 支付完成后回到本页时提示
+    if (msg.type === 'engineNotice') toast(msg.text, 'info', msg.action ? { label: msg.action, run: openPremium } : null); // 默认引擎不可用，已改用 Google
     if (msg.type === 'pageWords') reply(findPageWords(msg.words || []));
   });
 

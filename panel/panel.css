@@ -471,6 +471,107 @@ html[data-mode='drawer'] .main {
 }
 
 /* 代码已更新、需要刷新插件的提示 */
+/* 升级提示卡 */
+.upsell {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+.up-card {
+  width: 100%;
+  padding: 22px 20px 16px;
+  border-radius: 18px 18px 0 0;
+  border-top: 1px solid rgba(233, 196, 106, 0.45);
+  background: #1c1c1e;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: up-in 0.2s ease-out;
+}
+@keyframes up-in {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+}
+.up-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+.up-title svg {
+  width: 18px;
+  height: 18px;
+  color: var(--gold);
+}
+.up-price {
+  color: var(--gold);
+  font-size: 14px;
+}
+.up-card ul {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.up-card li::before {
+  content: '✓';
+  margin-right: 8px;
+  color: var(--gold);
+}
+.up-card .link {
+  align-self: center;
+}
+
+/* 选择的引擎暂停（未登录 / 会员到期）时的首页横幅 */
+.engine-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  background: rgba(233, 196, 106, 0.08);
+  color: var(--gold);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.engine-bar > div:first-child {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.engine-bar svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+.engine-bar .btns {
+  display: flex;
+  gap: 8px;
+}
+.engine-bar .btns button {
+  width: auto;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.engine-bar .ghost {
+  border: 1px solid #3a3a3e;
+  background: transparent;
+  color: var(--fg);
+}
 .stale-bar {
   display: flex;
   align-items: center;
@@ -530,6 +631,37 @@ html[data-mode='drawer'] .main {
 .oauth:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+/* 登录页内容较多时不压缩按钮和输入框高度 */
+.auth .oauth,
+.auth .outline,
+.auth .ifield,
+.auth .gold.submit {
+  flex-shrink: 0;
+}
+/* 第三方登录与邮箱表单之间的分隔线 */
+.auth .or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+.auth .or::before,
+.auth .or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid #333338;
+}
+.auth .switch {
+  margin: 4px 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.auth .switch .link {
+  font-size: 14px;
 }
 .ifield {
   display: flex;

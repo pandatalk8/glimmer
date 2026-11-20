@@ -75,9 +75,42 @@ let acct = { configured: false, loggedIn: false, email: null, account: null };
 let auth = { mode: 'signin', email: '', msg: '', kind: '', busy: false };
 const plan = () => acct.account?.plan || 'free';
 const isMember = () => plan() !== 'free';
+// 升级提示卡：点到需要会员的功能时，在面板内说明需要的等级、价格和权益
+const OFFER = {
+  premium: { price: '$29 / 年', perks: ['DeepL、Microsoft 专业翻译', '生词本不限数量', '生词本云同步，换设备不丢'] },
+  premium_plus: { price: '$6 / 月 或 $69 / 年', perks: ['包含 Premium 全部功能', 'GPT、Gemini、DeepSeek、Claude 四家大模型', '每月 2000 万 Token'] },
+};
+function showUpsell(e) {
+  document.querySelector('.upsell')?.remove();
+  const tier = e.tier === 'free' ? 'premium' : e.tier;
+  const o = OFFER[tier];
+  const el = document.createElement('div');
+  el.className = 'upsell';
+  el.innerHTML = `<div class="up-card" role="dialog">
+      <div class="up-title">${IC.crown}<span>${esc(e.name)} 需要 ${PLAN_NAME[tier]} 会员</span></div>
+      <div class="up-price">${PLAN_NAME[tier]} · ${o.price}</div>
+      <ul>${o.perks.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
+      <button class="gold" data-up="go">查看会员方案</button>
+      ${acct.loggedIn ? '' : '<button class="link up-login" data-up="login">已经是会员？登录</button>'}
+      <button class="link" data-up="close">以后再说</button>
+    </div>`;
+  el.addEventListener('click', (ev) => {
+    const a = ev.target.closest('[data-up]')?.dataset.up;
+    if (ev.target === el || a === 'close') return el.remove();
+    if (a === 'go') {
+      el.remove();
+      openPremium();
+    }
+    if (a === 'login') {
+      el.remove();
+      go('account');
+    }
+  });
+  document.body.appendChild(el);
+}
+
 function openPremium() {
-  chrome.tabs.create({ url: chrome.runtime.getURL('premium/premium.html') });
-  if (MODE === 'popup') window.close();
+  chrome.runtime.sendMessage({ type: 'openPremium' }).then(() => MODE === 'popup' && window.close());
 }
 
 async function send(type, data = {}) {
@@ -176,12 +209,10 @@ const PICKERS = {
         e.tier === 'free' ? '浏览器直接翻译' : e.type === 'llm' ? '大模型 · 由微光翻译服务器提供' : '由微光翻译服务器提供',
       ]),
     footer: '<button class="link" data-act="premium">查看会员方案 ' + IC.chev + '</button>',
-    // 未解锁的引擎不切换，直接打开 Premium 页面
+    // 未解锁的引擎不切换：先在面板内说明需要什么，用户点“查看会员方案”才打开方案页
     guard: (v) => {
-      if (canUse(plan(), v)) return true;
-      const e = engineOf(v);
-      toast(`${e.name} 需要 ${PLAN_NAME[e.tier]} 会员`);
-      openPremium();
+      if (canUse(plan(), v) && (v === 'google' || acct.loggedIn)) return true;
+      showUpsell(engineOf(v));
       return false;
     },
   },
@@ -322,14 +353,21 @@ const VIEWS = {
     const staleBar = build?.stale
       ? `<div class="stale-bar"><span>插件代码已更新，请刷新插件后再检查</span><button class="link" data-act="openExt">去刷新 ${IC.chev}</button></div>`
       : '';
+    // 选择的引擎暂时用不了（未登录、会员到期等）：翻译时自动改用 Google，这里说明原因并给出两个选择
+    const paused = eng && eng.id !== 'google' && (!acct.loggedIn || !canUse(plan(), eng.id));
+    const pausedBar = paused
+      ? `<div class="engine-bar"><div>${IC.crown}<span>${esc(eng.name)} 需要${acct.loggedIn ? ` ${PLAN_NAME[eng.tier]} 会员` : '登录并开通会员'}，正在使用 Google 翻译</span></div>
+          <div class="btns"><button class="gold sm" data-act="premium">${acct.loggedIn ? '开通会员' : '查看方案'}</button><button class="ghost sm" data-act="useGoogle">改用 Google</button></div></div>`
+      : '';
     return `${header()}
     <div class="body">
       ${staleBar}
+      ${pausedBar}
       <div class="grid2">
         <button class="stat" data-go="words"><span class="si si-pink">${IC.heart}</span>
           <span><b>${words.length}</b><small>生词本</small></span></button>
         <button class="stat" data-pick="engine"><span class="si si-gold">${IC.engine}</span>
-          <span><b>${esc(eng?.name.replace(/ 翻译$/, '') || S.engine)}</b><small>翻译引擎</small></span></button>
+          <span><b>${esc(paused ? 'Google' : eng?.name.replace(/ 翻译$/, '') || S.engine)}</b><small>${paused ? `${esc(eng.name)} 已暂停` : '翻译引擎'}</small></span></button>
       </div>
 
       ${
@@ -406,21 +444,23 @@ const VIEWS = {
     // ---- 未登录：登录 / 注册（参考 Trancy：Google 登录 + 邮箱密码，金色主按钮） ----
     if (!acct.loggedIn) {
       const signup = auth.mode === 'signup';
-      const google = `<button class="oauth" type="button" data-act="oauth" data-provider="google" ${auth.busy ? 'disabled' : ''}>${IC.google}<span>继续使用 Google</span></button>`;
+      // 文案按页面区分：登录页“使用 Google 登录”、注册页“使用 Google 注册”（新账号首次授权即自动注册）
+      const google = `<button class="oauth" type="button" data-act="oauth" data-provider="google" ${auth.busy ? 'disabled' : ''}>${IC.google}<span>${signup ? '使用 Google 注册' : '使用 Google 登录'}</span></button>`;
       const fields = `
           <label class="ifield"><span class="iicon">${IC.mail}</span>
             <input type="email" name="email" autocomplete="email" placeholder="邮箱" value="${esc(auth.email)}" required /></label>
           <label class="ifield"><span class="iicon">${IC.lock}</span>
             <input type="password" name="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? '密码（至少 6 位）' : '密码'}" minlength="6" required /></label>`;
-      const submitText = auth.busy ? '请稍候…' : signup ? '使用邮箱注册' : '使用邮箱登录';
+      const submitText = auth.busy ? '请稍候…' : signup ? '免费注册' : '登录';
       const terms = TERMS.terms || TERMS.privacy
         ? `注册即表示你同意${TERMS.terms ? `<a href="${esc(TERMS.terms)}" target="_blank">《服务条款》</a>` : '《服务条款》'}，并已阅读${TERMS.privacy ? `<a href="${esc(TERMS.privacy)}" target="_blank">《隐私政策》</a>` : '《隐私政策》'}。`
         : '注册即表示你同意《服务条款》，并已阅读《隐私政策》。';
       return `<header class="hd"><button class="back" data-act="back" title="返回">${IC.back}</button><span class="hd-back">返回</span></header>
       <div class="body auth">
-        <h2 class="auth-title">${signup ? '注册账号' : '欢迎回来'}</h2>
-        ${signup ? '' : '<p class="auth-sub">请先登录账号，以便使用微光翻译的完整功能</p>'}
+        <h2 class="auth-title">${signup ? '创建账号' : '欢迎回来'}</h2>
+        <p class="auth-sub">${signup ? '免费注册，开通会员后可使用 DeepL 与 AI 翻译' : '登录后可开通会员、在多台设备同步生词本'}</p>
         ${google}
+        <div class="or"><span>或使用邮箱</span></div>
         <form class="auth-form" id="authForm" novalidate>
           ${fields}
           ${msg}
@@ -428,11 +468,11 @@ const VIEWS = {
         </form>
         ${
           signup
-            ? `<button class="outline" data-act="guest">以游客身份使用</button>
-               <button class="link gold-link" data-act="authMode" data-mode="signin">已有账号，立即登录</button>
+            ? `<p class="switch">已有账号？<button class="link gold-link" data-act="authMode" data-mode="signin">登录</button></p>
+               <button class="outline" data-act="guest">暂不注册，继续免费使用</button>
                <p class="terms">${terms}</p>`
-            : `<div class="auth-links"><button class="link" data-act="forgot">忘记密码？</button>
-               <button class="link gold-link" data-act="authMode" data-mode="signup">注册账号</button></div>`
+            : `<div class="auth-links"><button class="link" data-act="forgot">忘记密码？</button></div>
+               <p class="switch">还没有账号？<button class="link gold-link" data-act="authMode" data-mode="signup">免费注册</button></p>`
         }
         ${beNote}
       </div>`;
@@ -704,6 +744,10 @@ document.addEventListener('click', async (e) => {
       return toast('会员状态已刷新');
     case 'premium':
       return openPremium();
+    case 'useGoogle':
+      await save({ engine: 'google' });
+      toast('已改用 Google 翻译');
+      return render();
     case 'portal':
       return busy(() => send('billingPortal'));
     case 'back':

@@ -82,7 +82,7 @@ npx supabase db push
 
 ### 开启 Google 登录（可选）
 
-登录页的“继续使用 Google”需要一个 Google OAuth 客户端：
+登录页的“使用 Google 登录”和注册页的“使用 Google 注册”需要一个 Google OAuth 客户端：
 
 **第一步，创建客户端。** 打开 [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create Credentials → OAuth client ID，类型选 **Web application**。首次使用需要先配置 OAuth consent screen（应用名称填“微光翻译”，用户类型选 External）。
 

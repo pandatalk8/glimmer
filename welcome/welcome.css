@@ -1,0 +1,188 @@
+/* 欢迎页：与方案页一致的深色风格 */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(1000px 500px at 50% -180px, rgba(124, 92, 255, 0.2), transparent 70%), #0b0b0f;
+}
+.topbar {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 24px 72px;
+}
+.hero {
+  text-align: center;
+  padding: 36px 0 28px;
+}
+.hero h1 {
+  margin: 0;
+  font-size: 42px;
+  font-weight: 800;
+}
+.hero p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+}
+.card {
+  border: 1px solid #26262d;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #16161c, #101015);
+}
+.demo {
+  padding: 22px 24px;
+}
+.demo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--gold);
+  font-weight: 600;
+}
+.demo-head select {
+  background: #1f1f25;
+  color: var(--fg);
+  border: 1px solid #34343c;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.demo .src {
+  margin: 16px 0 6px;
+  font-size: 18px;
+  line-height: 1.6;
+}
+.demo .tr {
+  margin: 0 0 6px;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+  color: #d9d4ff;
+  font-size: 17px;
+  line-height: 1.6;
+}
+.demo .tr.err {
+  color: var(--err);
+  border-color: var(--err);
+}
+.btn {
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid #34343c;
+  background: #1f1f25;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn.primary {
+  border: 0;
+  background: var(--grad);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.demo .btn {
+  margin-top: 12px;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 22px;
+}
+.step {
+  padding: 20px;
+}
+.step b {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: #c9bcff;
+}
+.step h3 {
+  margin: 12px 0 8px;
+  font-size: 16px;
+}
+.step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+kbd {
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid #3a3a42;
+  background: #1f1f25;
+  font: 12px/1.6 ui-monospace, monospace;
+}
+.actions {
+  text-align: center;
+  margin: 26px 0;
+}
+.plans {
+  padding: 18px 22px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.plans p {
+  margin: 0;
+}
+.plans b {
+  color: var(--fg);
+}
+.link {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+.link.gold {
+  color: var(--gold);
+  font-weight: 600;
+}
+.keys h2 {
+  margin: 36px 0 14px;
+  font-size: 18px;
+}
+.kgrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+@media (max-width: 720px) {
+  .steps {
+    grid-template-columns: 1fr;
+  }
+  .hero h1 {
+    font-size: 32px;
+  }
+}

@@ -1,4 +1,4 @@
-import { getSettings, saveSettings, ENGINES, FREE_WORD_LIMIT, PLAN_RANK } from '../shared/settings.js';
+import { getSettings, saveSettings, ENGINES, FREE_WORD_LIMIT, PLAN_RANK, PLAN_NAME, canUse } from '../shared/settings.js';
 import { LANGUAGES } from '../shared/languages.js';
 import { google } from './engines/mt.js';
 import { cacheGetMany, cacheSetMany, cacheClear } from './cache.js';
@@ -20,13 +20,48 @@ function cacheKey(engineId, from, to, text) {
   return [engineId, '', from || 'auto', to, text].join('\u0001');
 }
 
-// 主翻译入口：去重 + 缓存 + 调用引擎
-async function translate({ texts, from, to, engine, noCache }) {
+// 主翻译入口：去重 + 缓存 + 调用引擎。
+// 没有指定引擎时使用默认引擎；默认引擎用不了（未登录、等级不够、本月额度用完）时自动改用 Google，
+// 并在网页上提示一次——永远不要因为会员问题让用户读不下去。指定了引擎（划词面板手动选择、测试连接）时照常报错。
+async function translate({ texts, from, to, engine, noCache }, sender) {
   const settings = await getSettings();
-  const engineId = engine || settings.engine;
-  const target = to || settings.targetLang;
-  const source = from || settings.sourceLang;
+  const explicit = !!engine;
+  let engineId = engine || settings.engine;
   if (!ENGINES.some((e) => e.id === engineId)) throw new Error('未知翻译引擎：' + engineId);
+  if (!explicit && engineId !== 'google') {
+    const { account: acc, auth } = await chrome.storage.local.get(['account', 'auth']);
+    const reason = !auth ? 'login' : !canUse(acc?.plan || 'free', engineId) ? 'upgrade' : null;
+    if (reason) {
+      fallbackNotice(sender, engineId, reason);
+      engineId = 'google';
+    }
+  }
+  try {
+    return await translateWith(engineId, texts, from || settings.sourceLang, to || settings.targetLang, noCache);
+  } catch (e) {
+    if (explicit || engineId === 'google' || !['login', 'upgrade', 'quota'].includes(e.code)) throw e;
+    fallbackNotice(sender, engineId, e.code);
+    return translateWith('google', texts, from || settings.sourceLang, to || settings.targetLang, noCache);
+  }
+}
+
+/** 默认引擎不可用、已改用 Google 时，在发起翻译的网页上提示一次（每种原因每个浏览器会话一次） */
+async function fallbackNotice(sender, engineId, reason) {
+  const tabId = sender?.tab?.id;
+  if (tabId == null || sender.url?.startsWith(chrome.runtime.getURL(''))) return; // 扩展页面（面板）有自己的横幅
+  const e = ENGINES.find((x) => x.id === engineId);
+  const key = `notice:${engineId}:${reason}`;
+  const store = chrome.storage.session || chrome.storage.local;
+  if ((await store.get(key))[key]) return;
+  await store.set({ [key]: Date.now() });
+  const text =
+    reason === 'login' ? `${e.name} 需要登录并开通会员，已改用 Google 翻译`
+    : reason === 'quota' ? '本月 AI 翻译额度已用完，已改用 Google 翻译'
+    : `${e.name} 需要 ${PLAN_NAME[e.tier]} 会员，已改用 Google 翻译`;
+  chrome.tabs.sendMessage(tabId, { type: 'engineNotice', text, action: reason === 'quota' ? null : '查看会员方案' }, { frameId: sender.frameId || 0 }).catch(() => {});
+}
+
+async function translateWith(engineId, texts, source, target, noCache) {
 
   const keys = texts.map((t) => cacheKey(engineId, source, target, t));
   const cached = noCache ? texts.map(() => undefined) : await cacheGetMany(keys);
@@ -89,6 +124,13 @@ const handlers = {
   accountSignOut: () => account.signOut(),
   accountOAuth: (m) => account.signInWithOAuth(m),
   devBackend: (m) => account.devBackend(m),
+  // 打开方案页，并记下用户正在阅读的网页：开通成功后点“开始使用”回到这里
+  openPremium: async (_m, sender) => {
+    let from = sender?.tab && !sender.url?.startsWith(chrome.runtime.getURL('premium/')) ? sender.tab.id : null;
+    if (from == null) from = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []))[0]?.id ?? null;
+    await chrome.tabs.create({ url: chrome.runtime.getURL('premium/premium.html') + (from != null ? `?from=${from}` : '') });
+    return true;
+  },
   accountReset: (m) => account.resetPassword(m),
   billingCheckout: (m, sender) => account.checkout(m, account.originOf(sender)),
   billingPortal: (_m, sender) => account.openPortal(account.originOf(sender)),
@@ -117,7 +159,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   Promise.resolve()
     .then(() => h(msg, sender))
     .then((data) => sendResponse({ ok: true, data }))
-    .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
+    .catch((e) => sendResponse({ ok: false, error: e?.message || String(e), code: e?.code }));
   return true;
 });
 
@@ -247,7 +289,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     chrome.contextMenus.create({ id: 'toggle-page', title: '翻译 / 还原此页面', contexts: ['page'] });
     chrome.contextMenus.create({ id: 'translate-selection', title: '翻译“%s”', contexts: ['selection'] });
   });
-  if (details.reason === 'install') chrome.runtime.openOptionsPage();
+  if (details.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') }); // 首次安装：欢迎页
 });
 
 function sendToTab(tabId, payload) {

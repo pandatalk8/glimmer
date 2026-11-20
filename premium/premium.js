@@ -1,7 +1,8 @@
 // 会员方案页：三档方案、月付 / 年付切换、功能对比；未登录时弹出登录窗口，登录后继续支付
-import { PLAN_NAME } from '../src/shared/settings.js';
+import { PLAN_NAME, ENGINES, getSettings, saveSettings } from '../src/shared/settings.js';
 
 const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 // 价格（美元）与 Stripe 中的价格一致；修改价格时需同时修改 scripts/setup_stripe.py
@@ -245,6 +246,15 @@ async function showBillingResult() {
   if (r.status === 'success') {
     $('#doneText').innerHTML = `你现在是 <b>${esc(PLAN_NAME[r.plan])}</b> 会员，以下功能已解锁：`;
     $('#doneList').innerHTML = (UNLOCKED[r.plan] || []).map((x) => `<li>${esc(x)}</li>`).join('');
+    // 付完钱马上能用：直接选择默认翻译引擎
+    const cur = (await getSettings()).engine;
+    const picks = [...(SUGGEST[r.plan] || []), 'google'];
+    chosen = picks[0];
+    $('#doneEngines').innerHTML = `<div class="pe-title">选择默认翻译引擎</div>` + picks
+      .map((id) => `<button class="pe ${id === chosen ? 'on' : ''}" data-engine="${id}">${esc(id === 'google' ? (cur === 'google' ? '保持 Google 翻译' : 'Google 翻译') : ENGINES.find((e) => e.id === id).name)}</button>`)
+      .join('');
+    const fromTab = FROM != null ? await chrome.tabs.get(FROM).catch(() => null) : null;
+    $('#doneHint').textContent = fromTab ? '点击后回到你正在阅读的网页' : '';
     $('#doneModal').hidden = false;
     notice(`支付成功！你现在是 ${PLAN_NAME[r.plan]} 会员`);
   } else if (r.status === 'portal') {
@@ -253,7 +263,30 @@ async function showBillingResult() {
     notice(RESULT_TEXT[r.status] || '', r.status === 'cancel' ? 'err' : 'ok');
   }
 }
-$('#doneOk').onclick = () => ($('#doneModal').hidden = true);
+// 开通后推荐的默认引擎（第一个为默认选中）
+const SUGGEST = { premium: ['deepl'], premium_plus: ['deepseek', 'deepl'] };
+const FROM = (() => {
+  const v = new URLSearchParams(location.search).get('from');
+  return v && /^\d+$/.test(v) ? Number(v) : null;
+})();
+let chosen = null;
+$('#doneEngines').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-engine]');
+  if (!b) return;
+  chosen = b.dataset.engine;
+  $$('#doneEngines .pe').forEach((x) => x.classList.toggle('on', x === b));
+});
+// “开始使用”：保存默认引擎，回到打开方案页之前正在阅读的网页，并关闭方案页
+$('#doneOk').onclick = async () => {
+  if (chosen) await saveSettings({ engine: chosen });
+  $('#doneModal').hidden = true;
+  if (FROM == null) return;
+  const back = await chrome.tabs.update(FROM, { active: true }).catch(() => null);
+  if (!back) return;
+  chrome.windows.update(back.windowId, { focused: true }).catch(() => {});
+  const me = await chrome.tabs.getCurrent();
+  if (me) chrome.tabs.remove(me.id);
+};
 chrome.storage.onChanged.addListener((c, area) => area === 'local' && c.billingResult?.newValue && showBillingResult());
 
 render();

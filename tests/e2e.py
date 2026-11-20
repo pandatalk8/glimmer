@@ -77,6 +77,26 @@ async def main():
         eid = sw.url.split('/')[2]
         print(f'扩展已加载：{eid}\n')
 
+        # 0. 首次安装：打开欢迎页，可当场试译
+        print('[0] 首次安装欢迎页')
+        welcome = None
+        for _ in range(25):
+            welcome = next((x for x in ctx.pages if 'welcome/welcome.html' in x.url), None)
+            if welcome:
+                break
+            await asyncio.sleep(0.2)
+        check('安装后自动打开欢迎页（而不是完整设置页）', welcome is not None and not any('options.html' in x.url for x in ctx.pages))
+        await welcome.wait_for_selector('#demoBtn')
+        await welcome.locator('#demoBtn').click()
+        await welcome.wait_for_selector('#demoOut:not([hidden])', timeout=15000)
+        out = await welcome.locator('#demoOut').inner_text()
+        check('欢迎页“翻译这段文字”当场显示中文译文', any('\u4e00' <= c <= '\u9fff' for c in out) and '失败' not in out, out[:40])
+        check('欢迎页有三步上手、会员方案入口与快捷键', await welcome.locator('.step').count() == 3
+              and await welcome.locator('#openPlans').count() == 1 and 'Alt' in await welcome.locator('.keys').inner_text())
+        await welcome.set_viewport_size({'width': 1100, 'height': 900})
+        await welcome.screenshot(path=f'{OUTPUT}/welcome.png', full_page=True)
+        await welcome.close()
+
         # 1. 引擎
         print('[1] 翻译引擎')
         ext = await ctx.new_page()
@@ -134,6 +154,57 @@ async def main():
         await page.wait_for_timeout(300)
         check('译文全部移除', await page.locator('gl-trans').count() == 0)
         check('host 标记清理干净', await page.locator('.gl-host').count() == 0)
+
+        # 5b. 默认引擎不可用（未登录却选了 DeepL）：自动改用 Google，网页提示一次；划词面板与侧面板给出升级说明
+        print('\n[5b] 默认引擎不可用时自动改用 Google')
+        await sw.evaluate(SET, {'engine': 'deepl'})
+        await page.reload()
+        await page.wait_for_timeout(800)
+        await sw.evaluate(PAGE, True)
+        await page.wait_for_function("document.querySelectorAll('gl-trans:not(.gl-loading)').length >= 9", timeout=15000)
+        texts = await page.evaluate(TRANS)
+        check('整页仍然正常翻译，没有“翻译失败”', not any('翻译失败' in t for t in texts) and any('翻译' in t or '语言' in t for t in texts), texts[:2])
+        await page.wait_for_selector('glimmer-ui >> .toast', timeout=5000)
+        tip = await page.locator('glimmer-ui >> .toast').first.inner_text()
+        check('网页提示“DeepL 需要登录并开通会员，已改用 Google 翻译”并带“查看会员方案”按钮',
+              '已改用 Google 翻译' in tip and await page.locator('glimmer-ui >> .toast .toast-act').count() == 1, tip)
+        await page.screenshot(path=f'{OUTPUT}/engine-fallback.png')
+        await sw.evaluate(PAGE, False)
+        await page.wait_for_timeout(9000)  # 等提示消失
+        await sw.evaluate(PAGE, True)
+        await page.wait_for_timeout(1500)
+        check('同一原因只提示一次', await page.locator('glimmer-ui >> .toast').count() == 0)
+        await sw.evaluate(PAGE, False)
+        box = await page.locator('#sel').bounding_box()
+        await page.mouse.move(box['x'] + 2, box['y'] + 10)
+        await page.mouse.down()
+        await page.mouse.move(box['x'] + box['width'] - 2, box['y'] + 10, steps=5)
+        await page.mouse.up()
+        await page.wait_for_timeout(300)
+        await page.locator('glimmer-ui >> .sel-icon').click()
+        await page.wait_for_function("document.querySelector('glimmer-ui').shadowRoot.querySelector('.p-out')?.innerText.trim().length > 2", timeout=10000)
+        check('划词面板默认用 Google（默认引擎未解锁）', await page.locator('glimmer-ui >> .p-engine').input_value() == 'google')
+        await page.locator('glimmer-ui >> .p-engine').select_option('deepl')
+        await page.wait_for_selector('glimmer-ui >> .p-upsell', timeout=5000)
+        up = await page.locator('glimmer-ui >> .p-upsell').inner_text()
+        check('手动选 DeepL：面板内说明需要会员，提供“查看会员方案”“改用 Google 翻译”', '需要登录并开通会员' in up and '查看会员方案' in up and '改用 Google 翻译' in up, up)
+        await page.locator('glimmer-ui >> .p-up-back').click()
+        await page.wait_for_timeout(1500)
+        check('点“改用 Google 翻译”后显示译文', await page.locator('glimmer-ui >> .p-engine').input_value() == 'google'
+              and await page.locator('glimmer-ui >> .p-upsell').count() == 0)
+        pn = await ctx.new_page()
+        await pn.set_viewport_size({'width': 400, 'height': 640})
+        await pn.goto(f'chrome-extension://{eid}/panel/panel.html?view=home')
+        await pn.wait_for_timeout(600)
+        bar = await pn.locator('.engine-bar').inner_text() if await pn.locator('.engine-bar').count() else ''
+        check('侧面板首页横幅：说明 DeepL 暂停、正在使用 Google', 'DeepL 需要登录并开通会员，正在使用 Google 翻译' in bar, bar)
+        check('引擎卡片显示实际使用的 Google 与“DeepL 已暂停”', 'DeepL 已暂停' in await pn.locator('.stat[data-pick=engine]').inner_text())
+        await pn.screenshot(path=f'{OUTPUT}/panel-engine-paused.png')
+        await pn.locator('[data-act=useGoogle]').click()
+        await pn.wait_for_timeout(300)
+        eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.engine)")
+        check('点“改用 Google”后横幅消失、默认引擎为 Google', eng == 'google' and await pn.locator('.engine-bar').count() == 0, eng)
+        await pn.close()
 
         # 6. 付费引擎经由后端翻译代理（模拟后端）
         print('\n[6] 付费引擎经由后端翻译代理（本地模拟）')

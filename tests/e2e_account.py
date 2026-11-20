@@ -219,29 +219,33 @@ async def main():
         print('\n[2] 注册')
         pp = await open_panel()
         await pp.locator('[data-go=account]').click()
-        check('登录页：返回、欢迎回来、副标题', await pp.locator('.back').count() == 1
+        check('登录页：返回、欢迎回来、副标题说明登录的好处（不暗示必须登录）', await pp.locator('.back').count() == 1
               and '欢迎回来' in await pp.locator('.auth-title').inner_text()
-              and '完整功能' in await pp.locator('.auth-sub').inner_text())
-        check('登录页：Google 按钮、邮箱密码框、金色登录按钮、忘记密码、注册账号',
-              '继续使用 Google' in await pp.locator('.oauth').inner_text()
+              and '开通会员' in await pp.locator('.auth-sub').inner_text())
+        check('登录页：“使用 Google 登录”、“或使用邮箱”分隔、邮箱密码框、“登录”、忘记密码、“还没有账号？免费注册”',
+              await pp.locator('.oauth').inner_text() == '使用 Google 登录'
+              and '或使用邮箱' in await pp.locator('.or').inner_text()
               and await pp.locator('.ifield').count() == 2
-              and '使用邮箱登录' in await pp.locator('.gold.submit').inner_text()
+              and (await pp.locator('.gold.submit').inner_text()).strip() == '登录'
               and await pp.locator('[data-act=forgot]').count() == 1
-              and '注册账号' in await pp.locator('[data-act=authMode][data-mode=signup]').inner_text())
+              and '还没有账号？免费注册' in await pp.locator('.switch').inner_text())
         check('不提供 Apple 登录', 'Apple' not in await pp.locator('.body').inner_text())
         await pp.screenshot(path=f'{OUTPUT}/account-signin.png')
         await pp.locator('.oauth').click()
         await wait_for(lambda: pp.locator('.msg.err').count())
         check('Google 登录未开启时给出明确提示', '尚未开启 Google 登录' in await msg(pp), await msg(pp))
         await pp.locator('[data-act=authMode][data-mode=signup]').click()
-        check('注册页：标题、游客使用、已有账号、条款', '注册账号' in await pp.locator('.auth-title').inner_text()
-              and await pp.locator('[data-act=guest]').count() == 1
-              and '已有账号' in await pp.locator('[data-act=authMode][data-mode=signin]').inner_text()
+        check('注册页：“创建账号”、“使用 Google 注册”、“免费注册”、“已有账号？登录”、继续免费使用、条款',
+              '创建账号' in await pp.locator('.auth-title').inner_text()
+              and await pp.locator('.oauth').inner_text() == '使用 Google 注册'
+              and (await pp.locator('.gold.submit').inner_text()).strip() == '免费注册'
+              and '已有账号？登录' in await pp.locator('.switch').inner_text()
+              and '暂不注册，继续免费使用' in await pp.locator('[data-act=guest]').inner_text()
               and '服务条款' in await pp.locator('.terms').inner_text())
         await pp.screenshot(path=f'{OUTPUT}/account-signup.png')
         await pp.locator('[data-act=guest]').click()
         await pp.wait_for_timeout(200)
-        check('以游客身份使用：回到首页', await pp.locator('.stat').count() == 2)
+        check('暂不注册：回到首页', await pp.locator('.stat').count() == 2)
         await pp.locator('.rail [data-go=settings]').click()
         await pp.locator('[data-go=account]').click()
         await pp.locator('[data-act=authMode][data-mode=signup]').click()
@@ -348,7 +352,29 @@ async def main():
         check('成功弹窗列出已解锁的功能', await prem.locator('#doneList li').count() == 4)
         check('方案页是当前激活的标签页', await prem.evaluate('document.visibilityState') == 'visible')
         await prem.screenshot(path=f'{OUTPUT}/premium-paid.png')
+        opts = await prem.locator('#doneEngines .pe').all_inner_texts()
+        check('成功弹窗可直接选择默认引擎：DeepSeek（默认选中）/ DeepL / Google', opts[:2] == ['DeepSeek', 'DeepL'] and 'Google' in opts[2]
+              and await prem.locator('#doneEngines .pe.on').inner_text() == 'DeepSeek', opts)
         await prem.locator('#doneOk').click()
+        eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.engine)")
+        check('点“开始使用”后默认引擎改为 DeepSeek', eng == 'deepseek', eng)
+        # 从正在阅读的网页打开方案页（?from=标签ID）：开通成功后“开始使用”回到该网页并关闭方案页
+        reader = await ctx.new_page()
+        await reader.goto(f'{BASE}/fake-stripe/portal')
+        rid = await sw.evaluate("chrome.tabs.query({}).then(ts=>ts.find(t=>(t.url||'').includes('fake-stripe/portal')).id)")
+        p2 = await ctx.new_page()
+        await p2.goto(f'chrome-extension://{eid}/premium/premium.html?from={rid}')
+        await p2.wait_for_selector('.plan.premium_plus')
+        await sw.evaluate("()=>chrome.storage.local.set({billingResult:{status:'success',plan:'premium_plus',at:Date.now()}})")
+        await p2.wait_for_selector('#doneModal:not([hidden])', timeout=5000)
+        check('弹窗注明“点击后回到你正在阅读的网页”', '回到你正在阅读的网页' in await p2.locator('#doneHint').inner_text())
+        await p2.locator('#doneEngines [data-engine=deepl]').click()
+        await p2.locator('#doneOk').click()
+        await wait_for(lambda: asyncio.sleep(0, p2.is_closed() or None), 5)
+        active = await sw.evaluate("chrome.tabs.query({active:true,lastFocusedWindow:true}).then(t=>t[0]?.url||'')")
+        eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.engine)")
+        check('“开始使用”：关闭方案页，回到正在阅读的网页，默认引擎改为所选的 DeepL', p2.is_closed() and 'fake-stripe/portal' in active and eng == 'deepl', (active, eng))
+        await reader.close()
         check('Premium 页面：Premium+ 标为当前方案，Premium 已包含', await prem.locator('.plan.premium_plus.current').count() == 1
               and '已包含' in await prem.locator('.plan.premium .btn').inner_text())
         pp = await open_panel('account')

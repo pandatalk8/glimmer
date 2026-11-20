@@ -49,11 +49,11 @@
 
 ### 消息协议
 
-内容脚本、面板、设置页都通过 `chrome.runtime.sendMessage({ type, ...data })` 调用后台，返回 `{ ok: true, data }` 或 `{ ok: false, error }`。
+内容脚本、面板、设置页都通过 `chrome.runtime.sendMessage({ type, ...data })` 调用后台，返回 `{ ok: true, data }` 或 `{ ok: false, error, code }`（`code` 为可选的错误类型，如 `upgrade`）。
 
 | type | 参数 | 返回 |
 | --- | --- | --- |
-| `translate` | `texts: string[]`，可选 `to`、`from`、`engine`、`noCache` | `string[]`，与输入一一对应；会员引擎未登录、等级不够、用量用完时返回中文错误 |
+| `translate` | `texts: string[]`，可选 `to`、`from`、`engine`、`noCache` | `string[]`，与输入一一对应。不传 `engine` 时用默认引擎，默认引擎用不了（未登录、等级不够、额度用完）时自动改用 Google，并向发起的网页发送一次 `engineNotice`；传了 `engine` 时照常报错，错误带 `code`（`login` / `upgrade` / `quota`） |
 | `getSettings` | — | 合并默认值后的完整设置 |
 | `saveSettings` | `patch`（部分设置，深合并） | 新设置 |
 | `meta` | — | `{ engines, languages }` |
@@ -70,6 +70,7 @@
 | `accountReset` | `email` | 发送重置密码邮件 |
 | `billingCheckout` | `plan: 'premium' \| 'premium_plus'`、`interval: 'month' \| 'year'` | 在新标签页打开 Stripe 支付页；已是会员时改为打开客户门户，返回 `{ opened: 'portal' }` |
 | `billingPortal` | — | 在新标签页打开 Stripe 客户门户 |
+| `openPremium` | — | 打开方案页，并以 `?from=标签ID` 记下用户正在阅读的网页（开通成功后“开始使用”回到这里） |
 
 后台发给内容脚本（`chrome.tabs.sendMessage`）：
 

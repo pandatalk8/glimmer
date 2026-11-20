@@ -12,12 +12,16 @@
 4. 版本号：新增功能升次版本（0.2.0 → 0.3.0），只修问题升修订号（0.2.0 → 0.2.1）
 5. 提交代码时，更新日志与代码改动放在同一个提交里
 
+## 测试用例（必须遵守）
+
+`docs/test-cases.md` 是给测试人员的全旅程测试用例。**每次改动产品功能、交互逻辑、界面或文案，都要在同一个提交里同步更新测试用例**：预期结果中的文字以代码中的实际文案为准，新增的流程要补用例，删除的功能要删用例，避免用例落后于产品的真实样子。
+
 ## 常用命令
 
 ```bash
-python3 tests/e2e.py          # 核心回归，16 项
-python3 tests/e2e_real.py     # 真实网站与交互，55 项
-python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），52 项
+python3 tests/e2e.py          # 核心回归，28 项
+python3 tests/e2e_real.py     # 真实网站与交互，57 项
+python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），56 项
 deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅与翻译代理逻辑，19 项
 python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），24 项
 python3 tests/check_diagrams.py  # 文档中的 Mermaid 图能否正常渲染

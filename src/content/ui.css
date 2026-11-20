@@ -323,6 +323,46 @@ button {
   border-color: #7f1d1d;
   color: #fecaca;
 }
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toast-act {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: #e9c46a;
+  color: #14121c;
+  font: 600 12px/1.2 inherit;
+  cursor: pointer;
+}
+.p-upsell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #e9c46a;
+  font-size: 14px;
+}
+.p-upsell-btns {
+  display: flex;
+  gap: 8px;
+}
+.p-upsell-btns button {
+  border: 1px solid #3a3a3e;
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  color: inherit;
+  font: 500 13px/1.2 inherit;
+  cursor: pointer;
+}
+.p-upsell-btns .p-up-go {
+  border: 0;
+  background: #e9c46a;
+  color: #14121c;
+}
 .toast.success {
   border-color: rgba(233, 196, 106, 0.6);
   color: #e9c46a;

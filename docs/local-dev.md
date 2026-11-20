@@ -262,7 +262,7 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
    没有这个文件时本地 Supabase 会因缺少变量无法启动，可以临时把 `enabled` 改为 `false`
 3. 重启本地 Supabase：`npx supabase stop && npx supabase start`
 
-之后在面板的登录页点击“继续使用 Google”即可。未开启时，点击会提示“尚未开启 Google 登录”。
+之后在面板的登录页点击“使用 Google 登录”即可。未开启时，点击会提示“尚未开启 Google 登录”。
 
 ### 4.6 跑通一遍
 

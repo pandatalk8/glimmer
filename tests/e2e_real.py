@@ -231,6 +231,17 @@ async def main():
             tags = await pp.locator('.opt .tag').all_inner_texts()
             check('引擎选项标注会员等级', 'Premium' in tags and 'Premium+' in tags, tags)
             await pp.locator('[data-set=deepl]').click()
+            await pp.wait_for_selector('.upsell', timeout=3000)
+            await pp.wait_for_timeout(400)  # 等滑入动画结束再截图
+            up = await pp.locator('.up-card').inner_text()
+            await pp.screenshot(path=f'{OUTPUT}/panel-upsell.png')
+            check('免费版选择 DeepL：面板内弹出升级提示卡（等级、价格、权益），不直接跳转',
+                  'DeepL 需要 Premium 会员' in up and '$29 / 年' in up and '查看会员方案' in up and '以后再说' in up
+                  and not any('premium/premium.html' in x.url for x in ctx.pages), up.replace('\n', ' / '))
+            await pp.locator('[data-up=close]').click()
+            check('“以后再说”关闭提示卡', await pp.locator('.upsell').count() == 0)
+            await pp.locator('[data-set=deepl]').click()
+            await pp.locator('[data-up=go]').click()
             prem = None
             for _ in range(25):
                 prem = next((x for x in ctx.pages if 'premium/premium.html' in x.url), None)
@@ -238,7 +249,7 @@ async def main():
                     break
                 await asyncio.sleep(0.2)
             eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings.engine)")
-            check('免费版选择 DeepL：不切换引擎，打开 Premium 方案页', prem is not None and eng == 'google', eng)
+            check('点“查看会员方案”才打开方案页，引擎仍为 Google', prem is not None and eng == 'google', eng)
             if prem:
                 await prem.close()
             if not pp.is_closed():
