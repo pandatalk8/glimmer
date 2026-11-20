@@ -46,6 +46,15 @@
     <footer class="foot">© 微光翻译 · 价格以美元计，支付页显示的金额为准</footer>
 
     <!-- 登录弹窗：复用面板的账户页 -->
+    <div class="modal" id="doneModal" hidden>
+      <div class="done" role="dialog" aria-labelledby="doneTitle">
+        <div class="done-icon">✓</div>
+        <h2 id="doneTitle">支付成功</h2>
+        <p id="doneText"></p>
+        <ul id="doneList"></ul>
+        <button class="btn shine" id="doneOk">开始使用</button>
+      </div>
+    </div>
     <div class="modal" id="loginModal" hidden>
       <div class="sheet">
         <button class="x" id="closeLogin" title="关闭">✕</button>

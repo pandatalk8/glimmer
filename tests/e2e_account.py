@@ -56,7 +56,9 @@ class Mock(http.server.BaseHTTPRequestHandler):
         u = urlparse(self.path)
         DB.calls.append(('GET', u.path))
         if u.path == '/functions/v1/billing-return':
-            return self.send(200, '<h1>ok</h1>', 'text/html')
+            st = parse_qs(u.query).get('status', ['success'])[0]
+            text = {'success': '支付成功，正在确认会员状态', 'cancel': '已取消支付'}.get(st, '订阅设置已保存')
+            return self.send(200, f'<h1>{text}</h1>', 'text/html; charset=utf-8')
         if u.path == '/auth/v1/settings':
             return self.send(200, {'external': {'email': True, 'google': False}})
         if u.path in ('/fake-stripe/checkout', '/fake-stripe/portal'):
@@ -316,19 +318,37 @@ async def main():
         await prem.locator('#period [data-interval=year]').click()
         check('切换年付：Premium+ 显示 $69 / 年', '$69' in await prem.locator('.plan.premium_plus .sub').inner_text())
         check('功能对比表与常见问题', await prem.locator('#compare tr').count() > 8 and await prem.locator('.faq details').count() >= 5)
+        # 先取消一次支付：支付页关闭，回到方案页并提示“已取消支付”
+        await prem.locator('.plan.premium [data-act=buy]').click()
+        tab = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'fake-stripe/checkout' in x.url), None)))
+        await tab.goto(f'{BASE}/functions/v1/billing-return?status=cancel')
+        await wait_for(lambda: asyncio.sleep(0, tab.is_closed() or None), 10)
+        check('取消支付：支付页自动关闭', tab.is_closed())
+        await wait_for(lambda: prem.locator('#notice:not([hidden])').count(), 5)
+        check('取消支付：回到方案页并提示“已取消支付”', '已取消支付' in await prem.locator('#notice').inner_text(), await prem.locator('#notice').inner_text())
+
         await prem.locator('.plan.premium_plus [data-act=buy]').click()
         tab = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'fake-stripe/checkout' in x.url), None)))
         check('开通 Premium+ 年付：新标签页打开支付页', tab is not None and 'plan=premium_plus' in tab.url and 'interval=year' in tab.url, tab.url if tab else None)
-        # 模拟 Stripe webhook 已把用户升级为 Premium+，然后浏览器打开支付成功返回页
+        check('提示完成支付后会自动回到方案页', '自动回到这里' in await prem.locator('#notice').inner_text())
+        # 支付成功后浏览器打开返回页；模拟 webhook 晚 2 秒才把用户升级为 Premium+
         uid = DB.users['alice@example.com']['id']
-        DB.profiles[uid].update({'plan': 'premium_plus', 'subscription_status': 'active', 'current_period_end': '2027-11-17T00:00:00Z'})
         await tab.goto(f'{BASE}/functions/v1/billing-return?status=success')
+        check('返回页显示“支付成功，正在确认会员状态”', '正在确认会员状态' in await tab.content())
+        await asyncio.sleep(2)
+        DB.profiles[uid].update({'plan': 'premium_plus', 'subscription_status': 'active', 'current_period_end': '2027-11-17T00:00:00Z'})
+        await wait_for(lambda: asyncio.sleep(0, tab.is_closed() or None), 20)
+        check('会员生效后自动关闭支付页', tab.is_closed())
         get_plan = lambda: sw.evaluate("chrome.storage.local.get('account').then(r=>r.account?.plan)")
-        await wait_for(lambda: sw.evaluate("chrome.storage.local.get('account').then(r=>r.account?.plan==='premium_plus')"))
         plan = await get_plan()
         check('支付返回后自动刷新为 Premium+', plan == 'premium_plus', plan)
-        await prem.bring_to_front()
-        await prem.wait_for_timeout(500)
+        await wait_for(lambda: prem.locator('#doneModal:not([hidden])').count(), 5)
+        check('回到最初的方案页，弹出“支付成功”并说明当前等级', await prem.locator('#doneModal').is_visible()
+              and 'Premium+' in await prem.locator('#doneText').inner_text(), await prem.locator('#doneText').inner_text())
+        check('成功弹窗列出已解锁的功能', await prem.locator('#doneList li').count() == 4)
+        check('方案页是当前激活的标签页', await prem.evaluate('document.visibilityState') == 'visible')
+        await prem.screenshot(path=f'{OUTPUT}/premium-paid.png')
+        await prem.locator('#doneOk').click()
         check('Premium 页面：Premium+ 标为当前方案，Premium 已包含', await prem.locator('.plan.premium_plus.current').count() == 1
               and '已包含' in await prem.locator('.plan.premium .btn').inner_text())
         pp = await open_panel('account')

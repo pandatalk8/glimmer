@@ -347,6 +347,55 @@ tbody tr:last-child td {
   font-size: 13px;
 }
 
+/* ---------- 支付成功弹窗 ---------- */
+.done {
+  width: 420px;
+  max-width: calc(100vw - 40px);
+  padding: 36px 32px 30px;
+  border-radius: 20px;
+  text-align: center;
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, #1a1420, #100f16) padding-box, linear-gradient(160deg, #e9c46a, #b06ab3 45%, #5b4cf0) border-box;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.done-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: #14121c;
+  background: linear-gradient(135deg, #e9c46a, #9b7bff);
+}
+.done h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+}
+.done p {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+.done p b {
+  color: var(--gold);
+}
+.done ul {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.done li::before {
+  content: '✓';
+  margin-right: 10px;
+  color: var(--gold);
+}
+
 /* ---------- 登录弹窗 ---------- */
 .modal {
   position: fixed;

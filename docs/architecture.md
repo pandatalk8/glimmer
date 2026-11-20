@@ -371,14 +371,15 @@ sequenceDiagram
   U->>T: 填写银行卡并付款
   T->>S: webhook（带签名）
   S->>S: 验证签名、去重，按价格 ID 得出等级，写入 subscriptions 与 profiles（plan = premium_plus）
-  T->>U: 跳转到 billing-return 返回页
+  T->>U: 跳转到 billing-return 返回页（“支付成功，正在确认会员状态”）
   A->>A: tabs.onUpdated 检测到返回页
   A->>S: GET /rest/v1/profiles
   S-->>A: plan = premium_plus
-  A->>P: 写入 storage，面板与方案页显示 Premium+
+  A->>U: 关闭支付标签页，切回发起支付的方案页
+  A->>P: 写入 billingResult，方案页弹出“支付成功 · 你现在是 Premium+ 会员”
 ```
 
-支付返回页打开时，webhook 可能还没到达，所以 `account.js` 在返回页打开后的第 0、2、7、17 秒各刷新一次，拿到会员等级即停止。
+支付返回页打开时，webhook 可能还没到达，所以 `account.js` 在约 30 秒内多次刷新，直到会员等级达到所购方案。随后关闭支付标签页，切回发起支付的页面：发起页是方案页时弹出成功弹窗；是网页内的侧面板时在网页上提示；原页面已关闭时，支付标签页直接变成方案页。发起位置在点击“开通”时根据消息来源记下（没有 `tabs` 权限时读不到扩展页面标签的 URL），保存在 `storage.session`。30 秒内仍未确认时提示“支付已完成，会员正在开通”；取消支付和退出客户门户时同样回到原页面并提示。
 
 **已是会员时的升级。** Premium 会员在方案页点“升级到 Premium+”，`billing-checkout` 返回 409（`use_portal`），扩展改为打开客户门户，在门户中切换价格。这样同一用户始终只有一个订阅，门户会按比例计算差价。
 

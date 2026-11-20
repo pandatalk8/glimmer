@@ -1,6 +1,7 @@
 // 账户与订阅：直接调用 Supabase 的 REST 接口（Auth / PostgREST / Edge Functions），不依赖 SDK
 // 会话保存在 chrome.storage.local 的 auth；供界面显示的账户状态保存在 account
 import { BACKEND, LOCAL_DEV_BACKEND } from '../shared/config.js';
+import { PLAN_NAME, PLAN_RANK } from '../shared/settings.js';
 
 const AUTH_KEY = 'auth';
 const ACCOUNT_KEY = 'account';
@@ -388,30 +389,83 @@ export async function accountState() {
   return { configured, loggedIn: !!auth, email: auth?.user?.email || null, account: account || null, backend: await backendInfo() };
 }
 
-async function openBilling(fn, body) {
+// 一次支付 / 管理订阅的上下文：从哪个标签页发起、要开通哪个方案。放在 session 存储，浏览器关闭即清除
+const FLOW_KEY = 'billingFlow';
+const flowStore = () => chrome.storage.session || chrome.storage.local;
+
+/**
+ * 发起支付的位置：premium = 方案页标签；page = 网页（从网页内侧面板发起）；extension = 其他扩展页面；null = 弹窗等没有标签页的地方。
+ * 没有 tabs 权限时读不到扩展页面标签的 URL，所以在发起时根据消息来源记下来。
+ */
+export function originOf(sender) {
+  if (!sender?.tab) return null;
+  const ext = chrome.runtime.getURL('');
+  const kind = sender.url?.startsWith(ext + 'premium/') ? 'premium' : sender.url?.startsWith(ext) && sender.frameId === 0 ? 'extension' : 'page';
+  return { tabId: sender.tab.id, kind };
+}
+
+async function openBilling(fn, body, origin) {
   const token = await getToken();
   if (!token) throw new Error('请先登录');
   const { url } = await call(`/functions/v1/${fn}`, { method: 'POST', token, body });
+  const { [ACCOUNT_KEY]: account } = await chrome.storage.local.get(ACCOUNT_KEY);
+  await flowStore().set({
+    [FLOW_KEY]: { kind: fn === 'billing-portal' ? 'portal' : 'checkout', plan: body.plan || null, prevPlan: account?.plan || 'free', origin: origin || null, at: Date.now() },
+  });
   await chrome.tabs.create({ url });
   return true;
 }
 
-/** plan：premium（仅年付）| premium_plus（月付 / 年付）。已是会员时后端返回 use_portal，改为打开客户门户升级或切换 */
-export async function checkout({ plan = 'premium_plus', interval = 'year' }) {
+/**
+ * plan：premium（仅年付）| premium_plus（月付 / 年付）。已是会员时后端返回 use_portal，改为打开客户门户升级或切换。
+ * origin：发起支付的位置（originOf），支付完成后回到这里并显示结果
+ */
+export async function checkout({ plan = 'premium_plus', interval = 'year' }, origin) {
   try {
-    await openBilling('billing-checkout', { plan, interval: plan === 'premium' ? 'year' : interval === 'month' ? 'month' : 'year' });
+    await openBilling('billing-checkout', { plan, interval: plan === 'premium' ? 'year' : interval === 'month' ? 'month' : 'year' }, origin);
     return { opened: 'checkout' };
   } catch (e) {
     if (e.code !== 'use_portal') throw e;
-    await openPortal();
+    await openPortal(origin);
     return { opened: 'portal' };
   }
 }
-export const openPortal = () => openBilling('billing-portal', {});
+export const openPortal = (origin) => openBilling('billing-portal', {}, origin);
 
-// 支付 / 管理订阅返回页打开时，webhook 可能稍晚到达，间隔刷新几次
+/** 给用户看的支付结果 */
+export function billingResultText(r) {
+  if (r.status === 'success') return `支付成功！你现在是 ${PLAN_NAME[r.plan]} 会员`;
+  if (r.status === 'pending') return '支付已完成，会员正在开通，稍后会自动生效';
+  if (r.status === 'cancel') return '已取消支付，没有产生任何费用';
+  return r.plan && r.plan !== 'free' ? `订阅已更新，当前为 ${PLAN_NAME[r.plan]} 会员` : '订阅已更新，当前为免费版';
+}
+
+const PREMIUM_PAGE = () => chrome.runtime.getURL('premium/premium.html');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 关闭支付标签页，回到发起支付的页面并显示结果；原页面已关闭时，在支付标签页中打开方案页显示结果 */
+async function returnToOrigin(payTabId, flow, result) {
+  const kind = flow?.origin?.kind;
+  const origin = flow?.origin ? await chrome.tabs.get(flow.origin.tabId).catch(() => null) : null;
+  const toPremium = origin ? kind === 'premium' : result.status !== 'portal';
+  if (toPremium) await chrome.storage.local.set({ billingResult: result }); // 方案页读取后显示并清除
+  if (origin) {
+    await chrome.tabs.update(origin.id, { active: true });
+    await chrome.windows.update(origin.windowId, { focused: true }).catch(() => {});
+    if (kind === 'page') {
+      // 从网页内的侧面板发起：在网页上提示
+      chrome.tabs.sendMessage(origin.id, { type: 'billingResult', text: billingResultText(result), ok: result.status !== 'cancel' }).catch(() => {});
+    }
+    await chrome.tabs.remove(payTabId).catch(() => {});
+  } else if (toPremium) {
+    await chrome.tabs.update(payTabId, { url: PREMIUM_PAGE() });
+  }
+}
+
+// 支付 / 管理订阅返回页打开时：等 webhook 把会员状态写入数据库（可能晚几秒），然后回到发起支付的页面并告知结果
+const handledReturns = new Set();
 export function watchBillingReturn() {
-  chrome.tabs.onUpdated.addListener(async (_id, info, tab) => {
+  chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     if (info.status !== 'complete' || !tab.url) return;
     let base;
     try {
@@ -420,10 +474,30 @@ export function watchBillingReturn() {
       return;
     }
     if (!tab.url.startsWith(`${base}/functions/v1/billing-return`)) return;
-    for (const wait of [0, 2000, 5000, 10000]) {
-      await new Promise((r) => setTimeout(r, wait));
-      const a = await refreshAccount().catch(() => null);
-      if (a && a.plan !== 'free' && tab.url.includes('status=success')) break;
+    const status = new URL(tab.url).searchParams.get('status') || 'success';
+    if (status === 'verified') return; // 邮箱验证落地页，与支付无关
+    const once = `${tabId}|${tab.url}`;
+    if (handledReturns.has(once)) return;
+    handledReturns.add(once);
+
+    const { [FLOW_KEY]: flow } = await flowStore().get(FLOW_KEY);
+    const want = flow?.plan || 'premium';
+    let account = null;
+    let confirmed = false;
+    if (status !== 'cancel') {
+      for (const wait of [0, 1500, 2500, 4000, 6000, 8000, 10000]) {
+        await sleep(wait);
+        account = await refreshAccount().catch(() => account);
+        confirmed = status === 'success' && !!account && (PLAN_RANK[account.plan] || 0) >= (PLAN_RANK[want] || 1);
+        if (confirmed || (status === 'portal' && wait >= 1500)) break;
+      }
     }
+    const result = {
+      status: status === 'success' ? (confirmed ? 'success' : 'pending') : status === 'cancel' ? 'cancel' : 'portal',
+      plan: account?.plan || flow?.prevPlan || 'free',
+      at: Date.now(),
+    };
+    await flowStore().remove(FLOW_KEY);
+    await returnToOrigin(tabId, flow, result);
   });
 }

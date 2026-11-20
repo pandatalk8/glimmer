@@ -323,6 +323,11 @@ button {
   border-color: #7f1d1d;
   color: #fecaca;
 }
+.toast.success {
+  border-color: rgba(233, 196, 106, 0.6);
+  color: #e9c46a;
+  font-weight: 600;
+}
 
 /* ---------- YouTube 双语字幕 ---------- */
 .yt-sub {

@@ -773,6 +773,7 @@
     if (msg.type === 'toggleDrawer') toggleDrawer(msg.view);
     if (msg.type === 'getState') reply({ active: state.active, units: units.length, host });
     if (msg.type === 'ping') reply(true);
+    if (msg.type === 'billingResult') toast(msg.text, msg.ok ? 'success' : 'info'); // 支付完成后回到本页时提示
     if (msg.type === 'pageWords') reply(findPageWords(msg.words || []));
   });
 

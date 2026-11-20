@@ -187,7 +187,7 @@ async function buy(plan) {
     notice(
       r?.opened === 'portal'
         ? '你已经是会员：已在新标签页打开订阅管理，在那里升级或切换方案'
-        : '已在新标签页打开 Stripe 支付页面，完成支付后会员会自动生效'
+        : '已在新标签页打开 Stripe 支付页面。完成支付后会自动回到这里，并告诉你开通结果'
     );
   } catch (e) {
     notice(e.message, 'err');
@@ -228,5 +228,34 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
 });
 
+// ---------- 支付结果：后台在支付完成后切回本页，并写入 billingResult ----------
+const UNLOCKED = {
+  premium: ['生词本不限数量，自动云同步', 'DeepL 专业翻译', 'Microsoft 翻译'],
+  premium_plus: ['生词本不限数量，自动云同步', 'DeepL、Microsoft 专业翻译', 'GPT、Gemini、DeepSeek、Claude 四家大模型', '每月 2000 万 Token'],
+};
+const RESULT_TEXT = {
+  pending: '支付已完成，会员正在开通，稍后会自动生效',
+  cancel: '已取消支付，没有产生任何费用',
+};
+async function showBillingResult() {
+  const { billingResult: r } = await chrome.storage.local.get('billingResult');
+  if (!r || Date.now() - r.at > 10 * 60 * 1000) return;
+  await chrome.storage.local.remove('billingResult');
+  await load();
+  if (r.status === 'success') {
+    $('#doneText').innerHTML = `你现在是 <b>${esc(PLAN_NAME[r.plan])}</b> 会员，以下功能已解锁：`;
+    $('#doneList').innerHTML = (UNLOCKED[r.plan] || []).map((x) => `<li>${esc(x)}</li>`).join('');
+    $('#doneModal').hidden = false;
+    notice(`支付成功！你现在是 ${PLAN_NAME[r.plan]} 会员`);
+  } else if (r.status === 'portal') {
+    notice(r.plan !== 'free' ? `订阅已更新，当前为 ${PLAN_NAME[r.plan]} 会员` : '订阅已更新，当前为免费版');
+  } else {
+    notice(RESULT_TEXT[r.status] || '', r.status === 'cancel' ? 'err' : 'ok');
+  }
+}
+$('#doneOk').onclick = () => ($('#doneModal').hidden = true);
+chrome.storage.onChanged.addListener((c, area) => area === 'local' && c.billingResult?.newValue && showBillingResult());
+
 render();
 load(true).finally(() => (ready = true));
+showBillingResult();
