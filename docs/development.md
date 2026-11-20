@@ -264,7 +264,7 @@ await sw.evaluate("""async()=>{const [t]=await chrome.tabs.query({active:true});
 
 ```bash
 # 在项目根目录打包（排除文档和开发文件）
-zip -r glimmer-v0.2.0.zip manifest.json src panel options styles icons -x '*.DS_Store'
+zip -r glimmer-v0.3.0.zip manifest.json build.json src panel options premium welcome styles icons -x '*.DS_Store'
 ```
 
 上传到 [Chrome 应用商店开发者后台](https://chrome.google.com/webstore/devconsole)。发布前：
