@@ -85,6 +85,8 @@ class Mock(http.server.BaseHTTPRequestHandler):
             return self.send(401, {'message': 'Invalid JWT: publishable key used as Authorization'})
         if u.path == '/auth/v1/signup':
             email = body['email']
+            if email.endswith('.local'):  # 与云端一致：拒绝无法收信的域名
+                return self.send(400, {'code': 400, 'error_code': 'email_address_invalid', 'msg': f'Email address "{email}" is invalid'})
             if email in DB.users:
                 return self.send(422, {'code': 422, 'msg': 'User already registered'})
             uid = str(uuid.uuid4())
@@ -277,6 +279,12 @@ async def main():
         await pp.locator('.submit').click()
         await wait_for(lambda: pp.locator('.msg').count())
         check('重复注册显示“已注册”', '已注册' in await msg(pp), await msg(pp))
+        check('出错后注册按钮仍显示“免费注册”', await pp.locator('.submit').inner_text() == '免费注册', await pp.locator('.submit').inner_text())
+        await pp.fill('[name=email]', 'tester1@test.local')
+        await pp.locator('.submit').click()
+        await pp.wait_for_timeout(600)  # 上一条错误还在，等新的结果替换它
+        check('无法收信的邮箱：提示换真实邮箱，而不是“格式不正确”',
+              '请使用能正常收信的真实邮箱' in await msg(pp) and '格式' not in await msg(pp), await msg(pp))
         await pp.fill('[name=email]', 'confirm-bob@example.com')
         await pp.fill('[name=password]', 'secret123')
         await pp.locator('.submit').click()

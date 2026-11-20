@@ -631,7 +631,7 @@ function setBusy(on) {
   const btn = $('#authForm .submit');
   if (!btn) return render();
   btn.disabled = on;
-  btn.textContent = on ? '请稍候…' : auth.mode === 'signup' ? '使用邮箱注册' : '使用邮箱登录';
+  btn.textContent = on ? '请稍候…' : auth.mode === 'signup' ? '免费注册' : '登录'; // 与 render 中的文字保持一致
 }
 
 async function busy(fn) {

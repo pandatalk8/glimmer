@@ -71,7 +71,10 @@ const MESSAGES = [
   [/email not confirmed/i, '邮箱尚未验证，请先点击验证邮件中的链接'],
   [/user already registered|already been registered/i, '该邮箱已注册，请直接登录'],
   [/password should be at least/i, '密码至少需要 6 位'],
-  [/unable to validate email|invalid email|email address .* is invalid/i, '邮箱格式不正确'],
+  // 云端会拒绝无法收信的域名（如 test.local、example.com），这不是格式问题，要说清楚怎么办
+  [/email address .* is invalid|email_address_invalid/i, '无法向这个邮箱发送验证邮件，请使用能正常收信的真实邮箱'],
+  [/unable to validate email|invalid email/i, '邮箱格式不正确'],
+  [/email rate limit|over_email_send_rate_limit/i, '验证邮件发送太频繁，请稍后再试，或使用 Google 注册'],
   [/rate limit|too many requests/i, '操作太频繁，请稍后再试'],
   [/signups not allowed/i, '暂未开放注册'],
 ];
