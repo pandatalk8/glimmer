@@ -242,6 +242,24 @@ async def main():
         await pn.screenshot(path=f'{OUTPUT}/usage-warn.png')
         await pn.close()
 
+        # 6b. 已登录会员，但后端连不上：默认引擎照样改用 Google，不显示“翻译失败”
+        print('\n[6b] 默认引擎出现任何故障都改用 Google')
+        await sw.evaluate("""(o)=>chrome.storage.local.set(o)""",
+                          {'backendOverride': {'supabaseUrl': 'http://127.0.0.1:8799', 'supabaseAnonKey': 'anon-test'}})
+        await sw.evaluate("chrome.storage.session.clear()")
+        await sw.evaluate(SET, {'targetLang': 'ja'})  # 换目标语言，避开上一步留下的 DeepSeek 缓存
+        await sw.evaluate(PAGE, False)
+        await page.reload()
+        await page.wait_for_timeout(800)
+        await sw.evaluate(PAGE, True)
+        await page.wait_for_function("document.querySelectorAll('gl-trans:not(.gl-loading)').length >= 9", timeout=20000)
+        texts = await page.evaluate(TRANS)
+        check('后端连不上：整页用 Google 翻译完成，没有“翻译失败”',
+              not any('翻译失败' in t for t in texts) and not any(t.startswith('【译】') for t in texts), texts[:2])
+        await page.wait_for_selector('glimmer-ui >> .toast', timeout=5000)
+        tip = await page.locator('glimmer-ui >> .toast').first.inner_text()
+        check('网页提示“DeepSeek 暂时无法使用，已改用 Google 翻译”', 'DeepSeek 暂时无法使用，已改用 Google 翻译' in tip, tip)
+
         await ctx.close()
 
     passed = sum(results)

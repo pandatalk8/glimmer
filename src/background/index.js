@@ -39,8 +39,11 @@ async function translate({ texts, from, to, engine, noCache }, sender) {
   try {
     return await translateWith(engineId, texts, from || settings.sourceLang, to || settings.targetLang, noCache);
   } catch (e) {
-    if (explicit || engineId === 'google' || !['login', 'upgrade', 'quota'].includes(e.code)) throw e;
-    fallbackNotice(sender, engineId, e.code);
+    if (explicit || engineId === 'google') throw e;
+    // 会员问题（login / upgrade / quota）以及其他任何故障（后端连不上、登录过期、服务端出错、服务商 Key 未配置……）
+    // 都改用 Google：默认引擎出问题时绝不让整页显示“翻译失败”
+    const reason = ['login', 'upgrade', 'quota'].includes(e.code) ? e.code : 'error';
+    fallbackNotice(sender, engineId, reason);
     return translateWith('google', texts, from || settings.sourceLang, to || settings.targetLang, noCache);
   }
 }
@@ -57,8 +60,10 @@ async function fallbackNotice(sender, engineId, reason) {
   const text =
     reason === 'login' ? `${e.name} 需要登录并开通会员，已改用 Google 翻译`
     : reason === 'quota' ? '本月 AI 翻译额度已用完，已改用 Google 翻译'
+    : reason === 'error' ? `${e.name} 暂时无法使用，已改用 Google 翻译`
     : `${e.name} 需要 ${PLAN_NAME[e.tier]} 会员，已改用 Google 翻译`;
-  chrome.tabs.sendMessage(tabId, { type: 'engineNotice', text, action: reason === 'quota' ? null : '查看会员方案' }, { frameId: sender.frameId || 0 }).catch(() => {});
+  const action = reason === 'login' || reason === 'upgrade' ? '查看会员方案' : null;
+  chrome.tabs.sendMessage(tabId, { type: 'engineNotice', text, action }, { frameId: sender.frameId || 0 }).catch(() => {});
 }
 
 async function translateWith(engineId, texts, source, target, noCache) {

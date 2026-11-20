@@ -158,6 +158,8 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 | C-07 | 未登录手动选付费引擎 | 先退出登录 | 划词后在下拉框选 DeepL | 显示“DeepL 需要登录并开通会员后使用”与同样两个按钮 | |
 | C-08 | 生词本上限 | 免费版 | 在扩展后台 Console（`chrome://extensions` → 微光翻译 → Service Worker）执行下方代码，填满 100 个生词；然后在网页上再收藏一个新词 | 提示“免费版生词本最多 100 个，升级 Premium 不限数量”，提示中有“查看会员方案”按钮；生词数仍为 100 | |
 | C-12 | 默认引擎未解锁时整页翻译 | 免费版 | 扩展后台 Console 执行 `chrome.storage.local.get('settings').then(r=>chrome.storage.local.set({settings:{...r.settings,engine:'deepl'}}))`，再打开英文网页并开启“翻译此页面” | 整页正常显示 Google 译文，没有任何“翻译失败”；网页顶部提示“DeepL 需要 Premium 会员，已改用 Google 翻译”和“查看会员方案”按钮 | |
+| C-12b | 未登录时默认引擎是 DeepL | 退出登录 | 同 C-12 把默认引擎设为 DeepL，打开英文网页（如 Reddit、Hacker News）开启“翻译此页面” | 整页正常显示 Google 译文，没有“翻译失败，点击重试”；网页提示“DeepL 需要登录并开通会员，已改用 Google 翻译”和“查看会员方案”按钮；面板设置页“账户”行显示“登录 / 注册” | |
+| C-12c | 付费引擎出故障时 | Premium+ 会员，默认引擎 DeepSeek | 断开后端（本地环境执行 `npx supabase stop`，或在完整设置页把后端切到未启动的本地），打开英文网页开启“翻译此页面” | 整页仍用 Google 翻译完成，没有“翻译失败”；网页提示“DeepSeek 暂时无法使用，已改用 Google 翻译”（不带按钮）；恢复后端后重新翻译即恢复 DeepSeek | |
 | C-13 | 只提示一次 | 免费版 | C-12 之后关闭再开启翻译、或打开其他网页翻译 | 不再重复提示（重启浏览器后会再提示一次） | |
 | C-14 | 面板首页横幅 | 免费版 | C-12 之后打开侧面板首页 | 顶部横幅“DeepL 需要 Premium 会员，正在使用 Google 翻译”，按钮“开通会员”“改用 Google”；引擎卡片显示“Google · DeepL 已暂停”；点“改用 Google”后横幅消失 | |
 | C-09 | 生词不同步到云端 | 免费版 | 收藏一个词后，到 Studio 查看 `words` 表 | 该用户没有任何记录 | |
