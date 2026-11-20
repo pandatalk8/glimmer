@@ -559,8 +559,11 @@
     hideSelUI();
     closePanel();
     const root = ensureUI();
-    if (!META) META = await send('meta').catch(() => null);
+    META = (await send('meta').catch(() => null)) || META; // 每次重新读取，登录或升级后等级标注随之更新
     const engines = META?.engines || [];
+    const RANK = { free: 0, premium: 1, premium_plus: 2 };
+    const TIER = { premium: 'Premium', premium_plus: 'Premium+' };
+    const locked = (e) => (RANK[e.tier] || 0) > (RANK[META?.plan] || 0);
     let engine = S.engine;
     let to = pickTarget(text);
 
@@ -569,7 +572,7 @@
       <div class="p-head">
         <div class="p-brand">${LOGO}<span>微光翻译</span></div>
         <select class="p-engine">${engines
-          .map((e) => `<option value="${e.id}" ${e.id === engine ? 'selected' : ''}>${esc(e.name)}</option>`)
+          .map((e) => `<option value="${e.id}" ${e.id === engine ? 'selected' : ''}>${esc(e.name)}${locked(e) ? `（${TIER[e.tier]}）` : ''}</option>`)
           .join('')}</select>
         <button class="p-x" title="关闭">✕</button>
       </div>

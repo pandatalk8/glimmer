@@ -183,6 +183,25 @@ async def main():
         note = '本地开发' in await pp.locator('.body').inner_text()
         check('账户页的“后端：本地开发”说明只在连本地时出现', note == (not cfg_url))
         await pp.close()
+        # 完整设置页 → 高级：开发版可在云端与本地之间切换，切换时退出登录
+        op = await ctx.new_page()
+        await op.goto(f'chrome-extension://{eid}/options/options.html#advanced')
+        await op.wait_for_selector('#devBackendRow:not([hidden])', timeout=5000)
+        check('开发版在高级设置中显示“后端”切换', await op.locator('#devBackendSel').is_visible())
+        await sw.evaluate("()=>chrome.storage.local.set({auth:{access_token:'x',refresh_token:'y',expires_at:9e9,user:{email:'a@b.c'}}})")
+        await op.select_option('#devBackendSel', 'local')
+        await op.wait_for_timeout(400)
+        st = await sw.evaluate("chrome.storage.local.get(['backendOverride','auth'])")
+        check('切到本地：写入本机后端地址，并退出原登录', (st.get('backendOverride') or {}).get('supabaseUrl') == 'http://127.0.0.1:54321' and not st.get('auth'), st.get('backendOverride'))
+        check('切换后显示 Mailpit 提示', 'Mailpit' in await op.locator('#devBackendHint').inner_text())
+        if cfg_url:
+            await op.select_option('#devBackendSel', 'cloud')
+            await op.wait_for_timeout(400)
+            st = await sw.evaluate("chrome.storage.local.get('backendOverride')")
+            check('切回云端：清除覆盖地址', not st.get('backendOverride'))
+        else:
+            await sw.evaluate("()=>chrome.storage.local.remove('backendOverride')")
+        await op.close()
 
         print('\n[1] 后端未配置')
         # 用空地址覆盖，模拟正式版未填写 config.js 的情况

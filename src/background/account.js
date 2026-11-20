@@ -217,6 +217,21 @@ export async function signOut() {
   return true;
 }
 
+/**
+ * 开发版切换后端：local = 本机 Supabase，cloud = config.js 中的云端。
+ * 两边的账号互不相通，切换时退出本地登录状态（不请求旧后端）。
+ */
+export async function devBackend({ target } = {}) {
+  const dev = await isDevInstall();
+  if (target) {
+    if (!dev) throw new Error('只有开发版可以切换后端');
+    if (target === 'local') await chrome.storage.local.set({ backendOverride: LOCAL_DEV_BACKEND });
+    else await chrome.storage.local.remove('backendOverride');
+    await clearSession();
+  }
+  return { dev, cloudConfigured: filled(BACKEND), ...(await backendInfo()) };
+}
+
 export async function resetPassword({ email }) {
   await call('/auth/v1/recover', { method: 'POST', body: { email } });
   return true;

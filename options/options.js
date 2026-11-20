@@ -20,6 +20,23 @@ async function showBuild() {
   $('#staleBar').hidden = !info.stale;
 }
 showBuild();
+
+// 开发版：在云端与本机 Supabase 之间切换（正式版不显示）
+async function showDevBackend() {
+  const r = await chrome.runtime.sendMessage({ type: 'devBackend' }).catch(() => null);
+  const d = r?.data;
+  if (!r?.ok || !d.dev) return;
+  $('#devBackendRow').hidden = false;
+  $('#devBackendSel').value = d.local ? 'local' : 'cloud';
+  $('#devBackendSel').querySelector('[value=cloud]').disabled = !d.cloudConfigured;
+  $('#devBackendHint').textContent = (d.url || '未配置') + (d.local ? '，邮件在 Mailpit（127.0.0.1:54324）查看' : '');
+}
+showDevBackend();
+$('#devBackendSel').onchange = async (e) => {
+  const r = await chrome.runtime.sendMessage({ type: 'devBackend', target: e.target.value });
+  toast(r?.ok ? '已切换后端，请重新登录' : r?.error || '切换失败');
+  showDevBackend();
+};
 $('#openExt').onclick = () => chrome.runtime.sendMessage({ type: 'openExtensionsPage' });
 
 function toast(msg) {

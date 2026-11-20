@@ -233,7 +233,11 @@ chrome.storage.local.set({ backendOverride: { supabaseUrl: 'http://127.0.0.1:543
 // 改回云端：chrome.storage.local.remove('backendOverride')
 ```
 
+更简单的办法：完整设置页 → 高级 → “后端（开发版）”直接选择“本地”或“云端”，效果相同（只在开发版显示，切换会退出登录）。
+
 `config.js` 的 `BACKEND` 留空时，开发版会自动连接本机 Supabase，不需要上面这一步。
+
+**预置测试账号**：`python3 scripts/seed_review_accounts.py` 在本地后端创建三个已验证邮箱的账号（`free@review.local`、`premium@review.local`、`plus@review.local`，密码 `review123`），分别为免费版、Premium、Premium+，可直接登录 review；可重复执行，用于重置。完整测试步骤见 [测试用例](test-cases.md)。
 
 打开面板 → 设置 → 账户，看到登录表单、底部注明“后端：本地开发（127.0.0.1:54321）”即连接成功。本地后端没有启动时，操作会提示“本地后端没有运行”。
 

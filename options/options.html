@@ -129,6 +129,13 @@
         <div class="card form">
           <div class="field"><label>翻译缓存 <span class="hint">相同文本不会重复请求，节省额度</span></label><button class="ghost" id="clearCache">清除缓存</button></div>
           <div class="field"><label>当前版本 <span class="hint">与项目目录中 git log --oneline -1 显示的提交编号一致，即为最新代码</span></label><span id="buildVal" class="build-val"></span></div>
+          <div class="field" id="devBackendRow" hidden>
+            <label>后端（开发版） <span class="hint" id="devBackendHint"></span></label>
+            <select id="devBackendSel">
+              <option value="cloud">云端</option>
+              <option value="local">本地（127.0.0.1:54321）</option>
+            </select>
+          </div>
           <div class="field"><label>快捷键</label><button class="ghost" id="shortcuts">自定义快捷键</button></div>
           <div class="field">
             <label>备份</label>

@@ -124,6 +124,8 @@ async def main():
         await page.wait_for_function("document.querySelector('glimmer-ui').shadowRoot.querySelector('.p-out')?.innerText.trim().length > 2", timeout=10000)
         out = await page.locator('glimmer-ui >> .p-out').inner_text()
         check('面板显示译文', '翻译' in out or '选择' in out, out)
+        opts = await page.locator('glimmer-ui >> .p-engine option').all_inner_texts()
+        check('免费用户：引擎下拉框标注会员等级', 'DeepL（Premium）' in opts and 'DeepSeek（Premium+）' in opts and 'Google 翻译' in opts, opts)
         await page.screenshot(path=f'{OUTPUT}/selection.png')
 
         # 5. 还原
