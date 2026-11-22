@@ -262,7 +262,7 @@ async def main():
         tip = await page.locator('glimmer-ui >> .toast').first.inner_text()
         check('网页提示“DeepSeek 暂时无法使用，已改用 Google 翻译”', 'DeepSeek 暂时无法使用，已改用 Google 翻译' in tip, tip)
 
-        # 6c. 别的扩展把段落里的文字节点拆开重建（如生词高亮工具插入 <xt-mark>）：不能再翻译一遍
+        # 6c. 别的扩展把段落里的文字节点拆开重建（如 Trancy 用 <xt-mark> 高亮收藏的单词）：不能再翻译一遍
         print('\n[6c] 文字节点被别的扩展拆开后不重复翻译')
         await sw.evaluate("chrome.storage.local.remove('backendOverride')")
         await sw.evaluate(SET, {'engine': 'google', 'targetLang': 'zh-CN'})
