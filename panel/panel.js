@@ -450,7 +450,7 @@ const VIEWS = {
   account() {
     const be = acct.backend;
     const beNote = be?.local ? `<div class="hint center">后端：本地开发（${esc(be.url.replace(/^https?:\/\//, ''))}）</div>` : '';
-    const msg = auth.msg ? `<div class="msg ${auth.kind}">${esc(auth.msg)}</div>` : '';
+    const msg = auth.msg ? `<div class="msg ${auth.kind}">${msgHtml(auth.msg, auth.kind)}</div>` : '';
     if (!acct.configured) {
       return `${header('账户')}<div class="body"><div class="warn">账户服务尚未配置。开发者需要在 <code>src/shared/config.js</code> 中填写 Supabase 项目地址和 anon key，详见 <code>docs/backend.md</code>。</div></div>`;
     }
@@ -613,6 +613,12 @@ function go(next, push = true) {
   render();
 }
 
+// 邮箱还没验证、或刚发出验证邮件时，提示后附“重新发送验证邮件”（链接过期、邮件没收到时的出路）
+const needsResend = (text) => /邮箱尚未验证|验证邮件已发送/.test(text || '');
+const msgHtml = (text, kind) =>
+  esc(text) +
+  (kind && needsResend(text) ? ` <button type="button" class="link gold-link resend" data-act="resendConfirm">重新发送验证邮件</button>` : '');
+
 // 表单内的提示与按钮状态就地更新，不重绘表单，避免清空已输入的密码
 function showMsg(text, kind) {
   auth.msg = text;
@@ -625,7 +631,7 @@ function showMsg(text, kind) {
     form.querySelector('.submit').before(m);
   }
   m.className = 'msg ' + kind;
-  m.textContent = text;
+  m.innerHTML = msgHtml(text, kind);
 }
 
 function setBusy(on) {
@@ -791,6 +797,17 @@ document.addEventListener('click', async (e) => {
         localStorage.setItem('gl-expand', expanded ? '1' : '0');
       } catch {}
       return render();
+    case 'resendConfirm': {
+      const email = ($('#authForm [name=email]')?.value || auth.email || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showMsg('请先填写注册时用的邮箱', 'err');
+      try {
+        await send('accountResend', { email });
+        showMsg(`验证邮件已重新发送到 ${email}，请查收（也看看垃圾邮件），点击最新一封邮件中的链接`, 'ok');
+      } catch (e) {
+        showMsg(e.message, 'err');
+      }
+      return;
+    }
     case 'quick': {
       const t = $('#quickInput')?.value.trim();
       if (t) quickTranslate(t);

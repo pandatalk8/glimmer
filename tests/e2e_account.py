@@ -83,6 +83,9 @@ class Mock(http.server.BaseHTTPRequestHandler):
         # 新版 publishable key 不是 JWT，放进 Authorization 会被 Supabase 拒绝
         if self.headers.get('Authorization') == 'Bearer ' + ANON:
             return self.send(401, {'message': 'Invalid JWT: publishable key used as Authorization'})
+        if u.path == '/auth/v1/resend':
+            DB.resent = getattr(DB, 'resent', []) + [body.get('email')]
+            return self.send(200, {})
         if u.path == '/auth/v1/signup':
             email = body['email']
             if email.endswith('.local'):  # 与云端一致：拒绝无法收信的域名
@@ -297,6 +300,14 @@ async def main():
         await pp.locator('.submit').click()
         await wait_for(lambda: pp.locator('.msg.err').count())
         check('未验证邮箱登录时提示', '尚未验证' in await msg(pp), await msg(pp))
+        check('未验证时提示旁有“重新发送验证邮件”', await pp.locator('.msg [data-act=resendConfirm]').count() == 1)
+        await pp.locator('.msg [data-act=resendConfirm]').click()
+        for _ in range(20):
+            if '已重新发送' in await msg(pp):
+                break
+            await pp.wait_for_timeout(200)
+        check('点击后重新发送验证邮件到该邮箱', '验证邮件已重新发送到 confirm-bob@example.com' in await msg(pp)
+              and getattr(DB, 'resent', []) == ['confirm-bob@example.com'], await msg(pp))
 
         print('\n[4] 忘记密码、登录与会话刷新')
         await pp.fill('[name=email]', 'alice@example.com')

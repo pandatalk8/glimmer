@@ -137,6 +137,7 @@ const handlers = {
     return true;
   },
   accountReset: (m) => account.resetPassword(m),
+  accountResend: (m) => account.resendConfirm(m),
   billingCheckout: (m, sender) => account.checkout(m, account.originOf(sender)),
   billingPortal: (_m, sender) => account.openPortal(account.originOf(sender)),
   hasWord: async ({ word }) => (await getWords()).some((w) => wordKey(w.w) === wordKey(word)),

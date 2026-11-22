@@ -71,12 +71,16 @@ const MESSAGES = [
   [/email address .* is invalid|email_address_invalid/i, '无法向这个邮箱发送验证邮件，请使用能正常收信的真实邮箱'],
   [/unable to validate email|invalid email/i, '邮箱格式不正确'],
   [/email rate limit|over_email_send_rate_limit/i, '验证邮件发送太频繁，请稍后再试，或使用 Google 注册'],
+  [/only request this after (\d+) seconds?/i, (m) => `操作太频繁，请 ${m[1]} 秒后再试`],
   [/rate limit|too many requests/i, '操作太频繁，请稍后再试'],
   [/signups not allowed/i, '暂未开放注册'],
 ];
 
 function friendly(msg, status) {
-  for (const [re, zh] of MESSAGES) if (re.test(msg)) return zh;
+  for (const [re, zh] of MESSAGES) {
+    const m = msg.match(re);
+    if (m) return typeof zh === 'function' ? zh(m) : zh;
+  }
   if (status === 401) return '登录已过期，请重新登录';
   return msg || `请求失败（${status}）`;
 }
@@ -230,6 +234,12 @@ export async function devBackend({ target } = {}) {
     await clearSession();
   }
   return { dev, cloudConfigured: filled(BACKEND), ...(await backendInfo()) };
+}
+
+/** 重新发送注册验证邮件（链接过期、邮件没收到时） */
+export async function resendConfirm({ email }) {
+  await call('/auth/v1/resend', { method: 'POST', body: { type: 'signup', email } });
+  return true;
 }
 
 export async function resetPassword({ email }) {
