@@ -9,5 +9,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: '仅支持 POST' }, 405);
   const { domain = '' } = await req.json().catch(() => ({}));
-  return json({ deliverable: await domainDeliverable(String(domain), (d) => Deno.resolveDns(d, 'MX')) });
+  // 本地 Supabase 里 SUPABASE_URL 是容器内地址（如 http://kong:8000），云端是 https://<项目>.supabase.co
+  const local = !/\.supabase\.co/.test(Deno.env.get('SUPABASE_URL') || '');
+  return json({ deliverable: await domainDeliverable(String(domain), (d) => Deno.resolveDns(d, 'MX'), { local }) });
 });

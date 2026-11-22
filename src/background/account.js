@@ -211,21 +211,42 @@ export async function getToken() {
 }
 
 // ---------- 账户操作 ----------
+// 邮箱域名能不能收信：云端不会拒绝填错的域名（如 a@panda.com），照样“发出”验证邮件，用户会一直等。
+// 只把域名发给后端。填完邮箱（输入框失去焦点）时就预先查，结果按域名缓存，点“免费注册”时直接用
+const domainChecks = new Map(); // `${后端}|${域名}` → Promise<true | false | null>
+export async function checkEmailDomain({ email }) {
+  const domain = String(email || '').split('@').pop().trim().toLowerCase();
+  if (!domain) return null;
+  const { url } = await backend();
+  const key = `${url}|${domain}`;
+  if (!domainChecks.has(key)) {
+    const p = call('/functions/v1/check-email', { method: 'POST', body: { domain } })
+      .then((r) => r?.deliverable ?? null)
+      .catch(() => null);
+    domainChecks.set(key, p);
+    p.then((v) => v === null && domainChecks.delete(key)); // 查不出来的不缓存，下次再查
+  }
+  return domainChecks.get(key);
+}
+
 export async function signUp({ email, password }) {
-  // 先查邮箱域名能不能收信：云端不会拒绝填错的域名（如 a@panda.com），照样“发出”验证邮件，用户会一直等。
-  // 只把域名发给后端；查不出来（网络、旧后端没有这个函数）时放行
   const domain = String(email).split('@').pop().trim().toLowerCase();
-  // 最多等 4 秒：网络不好时跳过检查直接注册，不能让辅助检查拖慢注册
-  const chk = await Promise.race([
-    call('/functions/v1/check-email', { method: 'POST', body: { domain } }).catch(() => null),
-    new Promise((r) => setTimeout(() => r(null), 4000)),
-  ]);
-  if (chk?.deliverable === false) {
+  // 最多等 8 秒：网络不好时跳过检查直接注册（一般在填完邮箱时已经查好了，这里不用等）
+  const deliverable = await Promise.race([checkEmailDomain({ email }), new Promise((r) => setTimeout(() => r(null), 8000))]);
+  if (deliverable === false) {
     const e = new Error(`这个邮箱收不到邮件：${domain} 没有邮件服务器，请检查邮箱地址是否填错`);
     e.code = 'undeliverable';
     throw e;
   }
   const s = await call('/auth/v1/signup', { method: 'POST', body: { email, password } });
+  // 邮箱已注册（已验证）时，Supabase 为了不暴露“这个邮箱注册过”，返回一个假装成功的结果、也不发邮件；
+  // 它的 identities 是空数组，据此提示用户直接登录
+  const identities = s?.identities ?? s?.user?.identities;
+  if (!s?.access_token && Array.isArray(identities) && identities.length === 0) {
+    const e = new Error('该邮箱已注册，请直接登录');
+    e.code = 'registered';
+    throw e;
+  }
   // 开启邮箱验证时，注册成功但没有会话
   if (!s?.access_token) return { needConfirm: true, email };
   await saveSession(s);
@@ -297,6 +318,12 @@ export async function devBackend({ target } = {}) {
 
 /** 重新发送注册验证邮件（链接过期、邮件没收到时） */
 export async function resendConfirm({ email }) {
+  // 与注册一样先查域名：收不到信的地址（如 a@panda.com）不要白白消耗云端每小时有限的发信额度
+  const deliverable = await Promise.race([checkEmailDomain({ email }), new Promise((r) => setTimeout(() => r(null), 8000))]);
+  if (deliverable === false) {
+    const domain = String(email).split('@').pop().trim().toLowerCase();
+    throw Object.assign(new Error(`这个邮箱收不到邮件：${domain} 没有邮件服务器，请检查邮箱地址是否填错`), { code: 'undeliverable' });
+  }
   await call('/auth/v1/resend', { method: 'POST', body: { type: 'signup', email } });
   return true;
 }

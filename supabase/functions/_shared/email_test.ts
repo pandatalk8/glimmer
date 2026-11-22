@@ -27,8 +27,9 @@ Deno.test('大小写与末尾的点不影响', async () => {
   assertEquals(seen, 'gmail.com');
 });
 
-Deno.test('保留给测试的域名（test.local 等）：不下结论，放行', async () => {
+Deno.test('保留给测试的域名（test.local 等）：本地放行，云端拦下', async () => {
   for (const d of ['test.local', 'review.local', 'foo.test', 'x.example', 'a.invalid']) {
-    assertEquals(await domainDeliverable(d, async () => { throw notFound(); }), null);
+    assertEquals(await domainDeliverable(d, async () => [1], { local: true }), null);
+    assertEquals(await domainDeliverable(d, async () => [1]), false);
   }
 });

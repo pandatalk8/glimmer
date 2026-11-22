@@ -95,6 +95,8 @@ class Mock(http.server.BaseHTTPRequestHandler):
             if email.endswith('.local'):  # 与云端一致：拒绝无法收信的域名
                 return self.send(400, {'code': 400, 'error_code': 'email_address_invalid', 'msg': f'Email address "{email}" is invalid'})
             if email in DB.users:
+                if DB.users[email].get('confirmed'):  # 与云端一致：已验证的邮箱重复注册，返回假装成功、identities 为空
+                    return self.send(200, {'id': str(uuid.uuid4()), 'email': email, 'identities': []})
                 return self.send(422, {'code': 422, 'msg': 'User already registered'})
             uid = str(uuid.uuid4())
             confirm = email.startswith('confirm')

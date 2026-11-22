@@ -708,6 +708,13 @@ async function quickTranslate(text) {
   $('#quickInput')?.focus();
 }
 
+// 注册页填完邮箱就预先检查域名能不能收信（结果由后台缓存），点“免费注册”时不用再等
+document.addEventListener('focusout', (e) => {
+  if (e.target.name !== 'email' || auth.mode !== 'signup' || !e.target.closest('#authForm')) return;
+  const email = e.target.value.trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) chrome.runtime.sendMessage({ type: 'accountCheckEmail', email }).catch(() => {});
+});
+
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('button, input.sw');
   if (!b) return;
