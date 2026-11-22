@@ -262,6 +262,29 @@ async def main():
         tip = await page.locator('glimmer-ui >> .toast').first.inner_text()
         check('网页提示“DeepSeek 暂时无法使用，已改用 Google 翻译”', 'DeepSeek 暂时无法使用，已改用 Google 翻译' in tip, tip)
 
+        # 6c. 别的扩展把段落里的文字节点拆开重建（如生词高亮工具插入 <xt-mark>）：不能再翻译一遍
+        print('\n[6c] 文字节点被别的扩展拆开后不重复翻译')
+        await sw.evaluate("chrome.storage.local.remove('backendOverride')")
+        await sw.evaluate(SET, {'engine': 'google', 'targetLang': 'zh-CN'})
+        await sw.evaluate(PAGE, False)
+        await page.reload()
+        await page.wait_for_timeout(800)
+        await sw.evaluate(PAGE, True)
+        await page.wait_for_function("document.querySelectorAll('gl-trans:not(.gl-loading)').length >= 9", timeout=20000)
+        before = await page.evaluate("document.querySelectorAll('gl-trans').length")
+        wrapped = await page.evaluate("""()=>{let n=0;
+          for(const p of document.querySelectorAll('p')){
+            const t=[...p.childNodes].find(c=>c.nodeType===3&&/[A-Za-z]{4,}/.test(c.nodeValue)); if(!t) continue;
+            const m=t.nodeValue.match(/[A-Za-z]{4,}/); const i=m.index;
+            const after=t.splitText(i); const rest=after.splitText(m[0].length);
+            const mark=document.createElement('xt-mark'); mark.textContent=after.nodeValue; after.replaceWith(mark); n++;}
+          return n}""")
+        await page.wait_for_timeout(2500)
+        after = await page.evaluate("document.querySelectorAll('gl-trans').length")
+        dup = await page.evaluate("""()=>[...document.querySelectorAll('*')].filter(b=>{
+          const ts=[...b.querySelectorAll(':scope > gl-trans')].map(g=>g.textContent.trim()); return new Set(ts).size<ts.length}).length""")
+        check('段落被插入 <xt-mark> 后没有出现第二份译文', wrapped >= 3 and after == before and dup == 0, f'包裹 {wrapped} 段，译文 {before} → {after}，重复 {dup}')
+
         # 7. 从商店安装（installType = normal）：看不到“后端（开发版）”，不能切到本地，也不会自动连本机后端
         print('\n[7] 商店版没有开发入口')
         await sw.evaluate("""async()=>{await chrome.storage.local.remove('backendOverride');

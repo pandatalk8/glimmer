@@ -112,6 +112,9 @@
   }
 
   let processed = new WeakSet(); // 已处理过的文本节点
+  // 每个块已经翻译过的原文。别的扩展（如生词高亮工具插入 <xt-mark>）或网页框架会把文字节点拆开重建，
+  // 内容没变但节点是新的；只看节点会把整段再翻一遍、出现两份译文。原文相同就跳过，内容真的变了才重新翻译
+  let blockTexts = new WeakMap(); // block → Set<原文>
   let units = []; // 所有翻译单元
 
   // 把一个块元素拆成若干“连续 inline 段”，每段是一个翻译单元
@@ -141,7 +144,14 @@
       const fresh = textNodes.some((t) => !processed.has(t));
       textNodes.forEach((t) => processed.add(t));
       const text = textNodes.map((t) => t.nodeValue).join('').replace(/\s+/g, ' ').trim();
+      let seen = blockTexts.get(block);
+      if (fresh && seen?.has(text)) {
+        run = [];
+        return;
+      }
       if (fresh && shouldTranslate(text)) {
+        if (!seen) blockTexts.set(block, (seen = new Set()));
+        seen.add(text);
         result.push({ block, nodes: run.slice(), text, pure: false });
       }
       run = [];
@@ -361,6 +371,7 @@
     });
     document.querySelectorAll('.gl-src').forEach((e) => e.classList.remove('gl-src'));
     processed = new WeakSet();
+    blockTexts = new WeakMap();
     units = [];
     pendingByEl.clear();
     pending = [];
@@ -777,6 +788,7 @@
       const w = document.createTreeWalker(blk, NodeFilter.SHOW_TEXT);
       let t;
       while ((t = w.nextNode())) processed.delete(t);
+      blockTexts.delete(blk); // 悬停还原后允许再次翻译这一段
       return;
     }
     applyAttrs();

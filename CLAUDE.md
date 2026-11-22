@@ -23,7 +23,7 @@
 ## 常用命令
 
 ```bash
-python3 tests/e2e.py          # 核心回归，35 项
+python3 tests/e2e.py          # 核心回归，36 项
 python3 tests/e2e_real.py     # 真实网站与交互，61 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），62 项
 deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅与翻译代理逻辑，19 项
