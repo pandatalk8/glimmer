@@ -165,6 +165,20 @@ async def main():
             await page.keyboard.press('Alt')
             await page.wait_for_timeout(2000)
             check('还原后可再次翻译', await page.evaluate("document.querySelectorAll('gl-trans').length") == 1)
+            # 带链接的文字：段落内链接、整卡透明链接下的标题（Reddit 写法）、块级链接
+            await page.goto('http://127.0.0.1:8765/links.html')
+            await page.wait_for_timeout(600)
+            for sel, name in [('#inlineLink a', '段落内的链接'), ('#cardTitle a', '盖着整卡透明链接的标题（Reddit 写法）'), ('#blockLink', '块级链接')]:
+                b = await page.locator(sel).bounding_box()
+                await page.mouse.move(b['x'] + 20, b['y'] + b['height'] / 2)
+                before = await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-error)').length")
+                await page.keyboard.press('Alt')
+                for _ in range(20):
+                    await page.wait_for_timeout(250)
+                    if await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-loading):not(.gl-error)').length") > before:
+                        break
+                after = await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-loading):not(.gl-error)').length")
+                check(f'按 Alt 指向{name}也能翻译', after == before + 1, f'{before} → {after}')
             await page.close()
 
         # ---------- 输入框翻译 ----------

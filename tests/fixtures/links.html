@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hover over links</title>
+<style>
+  body { font: 16px/1.5 sans-serif; max-width: 720px; margin: 40px auto; }
+  .card { position: relative; border: 1px solid #ccc; padding: 16px; margin: 24px 0; }
+  .card .overlay { position: absolute; inset: 0; z-index: 1; }
+  .card h3 a { color: inherit; text-decoration: none; }
+  a.block { display: block; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <p id="inlineLink">Read the <a href="#a">official documentation about browser extensions</a> before you start building.</p>
+
+  <!-- Reddit / 新闻列表常见写法：整张卡片上盖一层透明链接 -->
+  <article class="card" id="card">
+    <a class="overlay" href="#post" aria-label="Open post"></a>
+    <h3 id="cardTitle"><a href="#post">I built a quiet online room where strangers just study together</a></h3>
+    <p>Posted by someone six days ago</p>
+  </article>
+
+  <a class="block" id="blockLink" href="#b">Learn how the scheduler decides which paragraphs to translate first</a>
+</body>
+</html>

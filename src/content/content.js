@@ -729,11 +729,27 @@
   // ---------- 悬停翻译（按住 Alt 悬停段落） ----------
   let mouse = { x: 0, y: 0 };
   document.addEventListener('mousemove', (e) => (mouse = { x: e.clientX, y: e.clientY }), { passive: true });
+  // 鼠标下真正有文字的段落。不能只看最上层元素：Reddit、新闻列表常在整张卡片上盖一层透明链接，
+  // 最上层是这层没有文字的链接，下面才是标题。所以按层叠顺序从上往下找第一个有文字的块。
+  function hoverHit(x, y) {
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (el === document.body || el === document.documentElement) break;
+      if (el.closest('glimmer-ui')) return null; // 指在扩展自己的界面上
+      const tr = el.closest('gl-trans');
+      if (tr) return { el, block: tr.parentElement };
+      const block = nearestBlock(el);
+      if (!block || block === document.body) continue;
+      if (block.querySelector(':scope > gl-trans') || (block.innerText || '').trim().length > 1) return { el, block };
+    }
+    return null;
+  }
+
   document.addEventListener('keydown', (e) => {
     if (!S?.hover?.enabled || e.key !== S.hover.key || e.repeat) return;
-    const target = document.elementFromPoint(mouse.x, mouse.y);
-    if (!target || target.closest('glimmer-ui')) return;
-    const existing = target.closest('gl-trans') || nearestBlock(target)?.querySelector(':scope > gl-trans');
+    const hit = hoverHit(mouse.x, mouse.y);
+    if (!hit) return;
+    const { el: target, block } = hit;
+    const existing = target.closest('gl-trans') || block.querySelector(':scope > gl-trans');
     if (existing && !state.active) {
       const blk = existing.parentElement;
       existing.remove();
@@ -742,8 +758,6 @@
       while ((t = w.nextNode())) processed.delete(t);
       return;
     }
-    const block = nearestBlock(target);
-    if (!block || block === document.body) return;
     applyAttrs();
     const found = unitsOfBlock(block);
     found.forEach(mount);
