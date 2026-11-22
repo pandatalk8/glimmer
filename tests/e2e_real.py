@@ -168,17 +168,21 @@ async def main():
             # 带链接的文字：段落内链接、整卡透明链接下的标题（Reddit 写法）、块级链接
             await page.goto('http://127.0.0.1:8765/links.html')
             await page.wait_for_timeout(600)
-            for sel, name in [('#inlineLink a', '段落内的链接'), ('#cardTitle a', '盖着整卡透明链接的标题（Reddit 写法）'), ('#blockLink', '块级链接')]:
+            # 检查译文出现在用户看到的那个标题 / 段落里，而不是叠在上面的透明元素里
+            cases = [('#inlineLink a', '#inlineLink', '段落内的链接'),
+                     ('#cardTitle a', '#cardTitle', '盖着整卡透明链接的标题（Reddit 写法）'),
+                     ('#card2Title a', '#card2Title', '整卡链接里的透明读屏文字正好叠在标题上'),
+                     ('#blockLink', '#blockLink', '块级链接')]
+            for sel, box_sel, name in cases:
                 b = await page.locator(sel).bounding_box()
                 await page.mouse.move(b['x'] + 20, b['y'] + b['height'] / 2)
-                before = await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-error)').length")
                 await page.keyboard.press('Alt')
+                q = f"document.querySelectorAll('{box_sel} gl-trans:not(.gl-loading):not(.gl-error)').length"
                 for _ in range(20):
                     await page.wait_for_timeout(250)
-                    if await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-loading):not(.gl-error)').length") > before:
+                    if await page.evaluate(q):
                         break
-                after = await page.evaluate("document.querySelectorAll('gl-trans:not(.gl-loading):not(.gl-error)').length")
-                check(f'按 Alt 指向{name}也能翻译', after == before + 1, f'{before} → {after}')
+                check(f'按 Alt 指向{name}：译文出现在它下方', await page.evaluate(q) == 1)
             await page.close()
 
         # ---------- 输入框翻译 ----------

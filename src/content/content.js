@@ -736,6 +736,8 @@
     let t;
     while ((t = w.nextNode())) {
       if (!t.nodeValue.trim() || t.parentElement?.closest('gl-trans,glimmer-ui')) continue;
+      // 透明、visibility: hidden 的文字虽然占着位置，用户看不见，也跳过
+      if (t.parentElement?.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) === false) continue;
       range.selectNodeContents(t);
       for (const r of range.getClientRects()) {
         if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return t;
