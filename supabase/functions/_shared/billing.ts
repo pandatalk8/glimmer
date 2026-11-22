@@ -50,6 +50,8 @@ export interface BillingDeps {
   updateProfile(userId: string, patch: ProfilePatch): Promise<void>;
   upsertSubscription(row: SubscriptionRow): Promise<void>;
   retrieveSubscription(id: string): Promise<StripeSubscriptionLike>;
+  /** 该用户在数据库中的全部订阅（刚写入的这条也在内） */
+  listSubscriptions(userId: string): Promise<SubscriptionRow[]>;
   /** 价格 ID 对应的会员等级（Premium 年付 → premium；Premium+ 月付 / 年付 → premium_plus） */
   planForPrice(priceId: string | null): PaidPlan;
 }
@@ -91,24 +93,40 @@ export async function syncSubscription(sub: StripeSubscriptionLike, deps: Billin
   if (!userId) throw new Error(`找不到订阅 ${sub.id} 对应的用户（customer=${cust}）`);
 
   const item = sub.items?.data?.[0];
-  const end = toIso(periodEnd(sub));
-  await deps.upsertSubscription({
+  const row: SubscriptionRow = {
     id: sub.id,
     user_id: userId,
     status: sub.status,
     price_id: item?.price?.id ?? null,
     billing_interval: item?.price?.recurring?.interval ?? null,
-    current_period_end: end,
+    current_period_end: toIso(periodEnd(sub)),
     cancel_at_period_end: !!sub.cancel_at_period_end,
-  });
+  };
+  await deps.upsertSubscription(row);
+  // 会员等级由用户的全部订阅决定：一个客户可能同时有多条订阅（例如付款被拒留下的 incomplete 订阅，
+  // 约 23 小时后变成 incomplete_expired 并发出通知）。只要还有一条有效订阅，就不能因为另一条失效而降级
+  const best = pickProfileSubscription([row, ...(await deps.listSubscriptions(userId)).filter((r) => r.id !== row.id)], deps.planForPrice);
   await deps.updateProfile(userId, {
-    plan: planFor(sub.status, item?.price?.id ?? null, deps.planForPrice),
+    plan: planFor(best.status, best.price_id, deps.planForPrice),
     stripe_customer_id: cust,
-    subscription_status: sub.status,
-    current_period_end: end,
-    cancel_at_period_end: !!sub.cancel_at_period_end,
+    subscription_status: best.status,
+    current_period_end: best.current_period_end,
+    cancel_at_period_end: best.cancel_at_period_end,
   });
   return userId;
+}
+
+const RANK: Record<Plan, number> = { free: 0, premium: 1, premium_plus: 2 };
+
+/** 决定会员资料的订阅：有效订阅中等级最高、到期最晚的一条；都无效时用 rows[0]（本次事件的订阅） */
+export function pickProfileSubscription(rows: SubscriptionRow[], planForPrice: (p: string | null) => PaidPlan): SubscriptionRow {
+  const entitled = rows.filter((r) => isEntitled(r.status));
+  if (!entitled.length) return rows[0];
+  return entitled.sort(
+    (a, b) =>
+      RANK[planFor(b.status, b.price_id, planForPrice)] - RANK[planFor(a.status, a.price_id, planForPrice)] ||
+      (b.current_period_end || '').localeCompare(a.current_period_end || '')
+  )[0];
 }
 
 export const HANDLED_EVENTS = new Set([
@@ -131,6 +149,10 @@ export async function handleEvent(event: StripeEventLike, deps: BillingDeps): Pr
     const userId = await syncSubscription(sub, deps, (obj.client_reference_id as string) || undefined);
     return `synced ${userId}`;
   }
-  const userId = await syncSubscription(obj as unknown as StripeSubscriptionLike, deps);
+  // 同一次付款的 created / updated 等事件几乎同时到达，且 Stripe 不保证顺序：事件里的快照可能已过时
+  // （例如 created 中仍是 incomplete）。以 Stripe 上的最新状态为准，取不到时才用事件快照
+  const snap = obj as unknown as StripeSubscriptionLike;
+  const fresh = await deps.retrieveSubscription(snap.id).catch(() => null);
+  const userId = await syncSubscription(fresh || snap, deps);
   return `synced ${userId}`;
 }

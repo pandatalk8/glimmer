@@ -1,7 +1,7 @@
 // 运行：deno test supabase/functions/
 import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.13';
 import Stripe from 'npm:stripe@17.7.0';
-import { type BillingDeps, handleEvent, planFor, priceMap, periodEnd, type StripeSubscriptionLike } from './billing.ts';
+import { type BillingDeps, handleEvent, planFor, priceMap, periodEnd, type StripeSubscriptionLike, type SubscriptionRow } from './billing.ts';
 
 const PRICES = { premiumYearly: 'price_premium_year', plusMonthly: 'price_plus_month', plusYearly: 'price_plus_year' };
 
@@ -16,6 +16,7 @@ function fakeDeps(subs: Record<string, StripeSubscriptionLike> = {}) {
     updateProfile: async (id, patch) => void profiles.set(id, { ...profiles.get(id), ...patch }),
     upsertSubscription: async (row) => void subscriptions.set(row.id, { ...row }),
     retrieveSubscription: async (id) => subs[id],
+    listSubscriptions: async (uid) => [...subscriptions.values()].filter((r) => r.user_id === uid) as unknown as SubscriptionRow[],
     planForPrice: priceMap(PRICES),
   };
   return { deps, profiles, subscriptions, events };
@@ -81,6 +82,30 @@ Deno.test('订阅删除：降为免费版（按 customer 找到用户）', async
   await handleEvent({ id: 'evt_3', type: 'customer.subscription.deleted', data: { object: { ...sub({ status: 'canceled' }) } } }, deps);
   assertEquals(profiles.get('user-1')!.plan, 'free');
   assertEquals(profiles.get('user-1')!.subscription_status, 'canceled');
+});
+
+Deno.test('事件乱序：迟到的 created（快照仍是 incomplete）不会把刚开通的会员降级', async () => {
+  const premium = { current_period_end: 1798761600, price: { id: 'price_premium_year', recurring: { interval: 'year' } } };
+  const active = sub({ items: { data: [premium] } });
+  const { deps, profiles } = fakeDeps({ sub_1: active }); // Stripe 上的最新状态：active
+  await handleEvent({ id: 'evt_u', type: 'customer.subscription.updated', data: { object: { ...active } } }, deps);
+  await handleEvent({ id: 'evt_c', type: 'customer.subscription.created', data: { object: { ...sub({ status: 'incomplete', items: { data: [premium] } }) } } }, deps);
+  assertEquals(profiles.get('user-1')!.plan, 'premium');
+  assertEquals(profiles.get('user-1')!.subscription_status, 'active');
+});
+
+Deno.test('同一客户多条订阅：被拒卡留下的订阅过期，不影响另一条有效订阅', async () => {
+  const premium = { current_period_end: 1798761600, price: { id: 'price_premium_year', recurring: { interval: 'year' } } };
+  const { deps, profiles } = fakeDeps();
+  await handleEvent({ id: 'evt_a', type: 'customer.subscription.created', data: { object: { ...sub({ id: 'sub_declined', status: 'incomplete', items: { data: [premium] } }) } } }, deps);
+  await handleEvent({ id: 'evt_b', type: 'customer.subscription.updated', data: { object: { ...sub({ id: 'sub_ok', items: { data: [premium] } }) } } }, deps);
+  assertEquals(profiles.get('user-1')!.plan, 'premium');
+  await handleEvent({ id: 'evt_x', type: 'customer.subscription.updated', data: { object: { ...sub({ id: 'sub_declined', status: 'incomplete_expired', items: { data: [premium] } }) } } }, deps);
+  assertEquals(profiles.get('user-1')!.plan, 'premium');
+  assertEquals(profiles.get('user-1')!.subscription_status, 'active');
+  // 有效的那条被取消后才降为免费版
+  await handleEvent({ id: 'evt_y', type: 'customer.subscription.deleted', data: { object: { ...sub({ id: 'sub_ok', status: 'canceled', items: { data: [premium] } }) } } }, deps);
+  assertEquals(profiles.get('user-1')!.plan, 'free');
 });
 
 Deno.test('重复投递的事件只处理一次', async () => {

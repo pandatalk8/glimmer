@@ -2,7 +2,7 @@
 import Stripe from 'npm:stripe@17.7.0';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.49.4';
 import { env } from './http.ts';
-import { priceMap, type BillingDeps, type StripeSubscriptionLike } from './billing.ts';
+import { priceMap, type BillingDeps, type StripeSubscriptionLike, type SubscriptionRow } from './billing.ts';
 
 /** 三个价格 ID（Stripe 后台或 scripts/setup_stripe.py 创建） */
 export function prices() {
@@ -57,6 +57,14 @@ export function billingDeps(db: SupabaseClient, stripe: Stripe): BillingDeps {
     async upsertSubscription(row) {
       const { error } = await db.from('subscriptions').upsert({ ...row, updated_at: now() });
       if (error) throw error;
+    },
+    async listSubscriptions(userId) {
+      const { data, error } = await db
+        .from('subscriptions')
+        .select('id,user_id,status,price_id,billing_interval,current_period_end,cancel_at_period_end')
+        .eq('user_id', userId);
+      if (error) throw error;
+      return (data || []) as SubscriptionRow[];
     },
     async retrieveSubscription(id) {
       return (await stripe.subscriptions.retrieve(id)) as unknown as StripeSubscriptionLike;

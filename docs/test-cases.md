@@ -189,6 +189,8 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 
 ## 七、旅程四：开通会员（充值升级）
 
+> 本旅程可在云端一键自动回归：`python3 tests/e2e_cloud_billing.py`（D-01 ~ D-11，约 3 分钟，测试账号与 Stripe 测试客户自动创建、自动删除）。
+
 ### 6.1 Premium 方案页
 
 | 编号 | 场景 | 操作步骤 | 预期结果 | 结果 |
@@ -211,7 +213,7 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 | D-09 | 开通 Premium（年付） | 在网页上打开侧面板 → 右上角“Premium” → 开通 Premium，用卡号 `4242 4242 4242 4242` 付款 | 先显示“支付成功，正在确认会员状态”；几秒内支付标签页自动关闭，回到方案页，弹出“支付成功 · 你现在是 Premium 会员”、已解锁的功能、“选择默认翻译引擎”（DeepL 默认选中 / 保持 Google 翻译）、“开始使用”和“点击后回到你正在阅读的网页”；面板账户页显示“Premium 会员”与下次续费日期，右上角变为带皇冠的实心“Premium” | |
 | D-09b | 原页面已关闭 | 点“开通”后关闭方案页，再完成付款 | 支付标签页自动变成方案页，并弹出“支付成功” | |
 | D-09c | 开始使用 | D-09 的弹窗中保持 DeepL，点“开始使用” | 方案页关闭，回到打开方案页之前正在阅读的网页；默认引擎已是 DeepL（面板首页引擎卡片显示 DeepL） | |
-| D-10 | 后台数据 | D-09 之后 | Studio：`profiles.plan = premium`，`subscription_status = active`；`subscriptions` 有一条年付记录；Stripe 后台有该订阅，`stripe listen` 终端显示事件 `[200]` | |
+| D-10 | 后台数据 | D-09 之后 | Studio：`profiles.plan = premium`，`subscription_status = active`；`subscriptions` 有一条年付记录；Stripe 后台有该订阅，`stripe listen` 终端显示事件 `[200]`（云端：Stripe 后台 Webhooks 中该客户的事件均已成功送达）。账号先做过 D-08 时，`subscriptions` 里另有一条被拒卡留下的 `incomplete` 记录，属正常，会员状态以 `profiles` 为准 | |
 | D-11 | 3D 验证 | 用另一个新账号开通 Premium+，卡号 `4000 0025 0000 3155` | 弹出验证窗口，点通过后付款成功并变为 Premium+ | |
 
 ---
