@@ -206,6 +206,31 @@ async def main():
             await page.wait_for_timeout(2500)
             v = await page.locator('#inp').input_value()
             check('input 内容被替换为英文', v and 'hello' in v.lower(), v)
+            # 更难的输入框：在 shadow DOM 里（Reddit 搜索框）、网站阻止按键事件冒泡、中文输入法的全角空格
+            await page.evaluate("""()=>{
+              const host=document.createElement('search-box'); document.body.prepend(host);
+              host.attachShadow({mode:'open'}).innerHTML='<input id="sh" type="text">';
+              const s=document.createElement('input'); s.id='stop'; s.type='search'; document.body.prepend(s);
+              s.addEventListener('keyup', e=>e.stopPropagation()); s.addEventListener('keydown', e=>e.stopPropagation());
+              const f=document.createElement('input'); f.id='full'; document.body.prepend(f);}""")
+            await page.locator('search-box').locator('#sh').click()
+            await page.keyboard.type('你好世界')
+            await page.keyboard.type('   ')
+            await page.wait_for_timeout(2500)
+            v = await page.evaluate("document.querySelector('search-box').shadowRoot.querySelector('#sh').value")
+            check('shadow DOM 里的输入框（Reddit 搜索框写法）也能三空格翻译', v and 'hello' in v.lower(), v)
+            await page.locator('#stop').click()
+            await page.keyboard.type('你好世界')
+            await page.keyboard.type('   ')
+            await page.wait_for_timeout(2500)
+            v = await page.locator('#stop').input_value()
+            check('网站阻止按键事件冒泡时也能三空格翻译', v and 'hello' in v.lower(), v)
+            await page.locator('#full').click()
+            await page.keyboard.insert_text('你好世界　　')
+            await page.keyboard.type(' ')
+            await page.wait_for_timeout(2500)
+            v = await page.locator('#full').input_value()
+            check('中文输入法的全角空格也算', v and 'hello' in v.lower(), v)
             await sw.evaluate(SET, {'inputTranslate': {'enabled': False, 'targetLang': 'en'}})
             await page.close()
 

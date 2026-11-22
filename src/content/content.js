@@ -798,29 +798,39 @@
   });
 
   // ---------- 输入框翻译（连按三次空格） ----------
-  document.addEventListener('keyup', async (e) => {
-    if (!S?.inputTranslate?.enabled || e.key !== ' ') return;
-    const el = e.target;
-    const isField = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/.test(el.type));
-    const value = isField ? el.value : el.isContentEditable ? el.innerText : null;
-    if (value == null || !/\S {3}$/.test(value.replace(/ /g, ' '))) return;
-    const text = value.replace(/[\s ]{3}$/, '');
-    try {
-      toast('正在翻译输入内容…');
-      const [r] = await send('translate', { texts: [text], to: S.inputTranslate.targetLang });
-      if (isField) {
-        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
-        setter.call(el, r);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        el.focus();
-        document.execCommand('selectAll');
-        document.execCommand('insertText', false, r);
+  // 三个空格可以是半角、全角（中文输入法全角模式）或不换行空格
+  const TRIPLE_SPACE = /\S[ \u00a0\u3000]{3}$/;
+  // 挂在 window 的捕获阶段：有些网站会在输入框上阻止按键事件冒泡，冒泡阶段收不到
+  window.addEventListener(
+    'keyup',
+    async (e) => {
+      if (!S?.inputTranslate?.enabled || e.isComposing) return; // 输入法还在选字时不处理
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      // composedPath()[0] 是真正获得焦点的元素：Reddit 等网站的输入框在 shadow DOM 里，e.target 只是外层组件
+      const el = e.composedPath()[0];
+      if (!el || el.nodeType !== 1 || el.closest?.('glimmer-ui')) return;
+      const isField = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/.test(el.type));
+      const value = isField ? el.value : el.isContentEditable ? el.innerText : null;
+      if (value == null || !TRIPLE_SPACE.test(value.replace(/\n$/, ''))) return;
+      const text = value.replace(/\n$/, '').replace(/[ \u00a0\u3000]{3}$/, '');
+      try {
+        toast('正在翻译输入内容…');
+        const [r] = await send('translate', { texts: [text], to: S.inputTranslate.targetLang });
+        if (isField) {
+          const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
+          setter.call(el, r);
+          el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        } else {
+          el.focus();
+          document.execCommand('selectAll');
+          document.execCommand('insertText', false, r);
+        }
+      } catch (err) {
+        toast(err.message, 'error');
       }
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  });
+    },
+    true
+  );
 
   // 生词本中哪些词出现在当前网页上：单词按整词匹配，短语按子串匹配，不区分大小写
   function findPageWords(list) {
