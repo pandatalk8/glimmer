@@ -13,6 +13,8 @@
     let raf = 0;
     let pausedByUs = false;
     let enabled = true;
+    // 最近一次截到的字幕：YouTube 不会重复请求同一条字幕，关闭双语字幕后再打开时要靠它重新显示
+    let lastCaption = null;
 
     const S = () => G.settings?.() || {};
 
@@ -75,12 +77,31 @@
         return;
       }
       if (!raw.length) return;
-      const u = new URL(url, location.href);
+      let u = new URL(url, location.href);
+      // 播放器开着“自动翻译”时，截到的是 YouTube 已经翻好的字幕（带 tlang）。改取同一条字幕的原文；
+      // 取不到时直接显示这份译文，不再拿去重复翻译
+      let alreadyTranslated = false;
+      if (u.searchParams.get('tlang')) {
+        const orig = new URL(u);
+        orig.searchParams.delete('tlang');
+        try {
+          const t = await (await fetch(orig.href, { credentials: 'include' })).text();
+          const r2 = t.trimStart().startsWith('<') ? parseXml(t) : parseJson3(t);
+          if (r2.length) {
+            raw = r2;
+            u = orig;
+          } else alreadyTranslated = true;
+        } catch {
+          alreadyTranslated = true;
+        }
+      }
       const key = [u.searchParams.get('v'), u.searchParams.get('lang'), u.searchParams.get('tlang')].join('|');
       if (key === trackKey && cues.length) return;
       trackKey = key;
       const isAsr = u.searchParams.get('kind') === 'asr';
       cues = isAsr ? mergeAsr(raw) : raw;
+      if (alreadyTranslated) cues.forEach((c) => (c.tr = c.text));
+      lastIdx = -2; // 换了一条字幕（如切换语言）：强制重画，否则同一句序号下仍显示旧字幕
       ensureOverlay();
       hideNative(true);
       translateAll(key);
@@ -150,7 +171,7 @@
       if (on && !st) {
         st = document.createElement('style');
         st.id = 'glimmer-yt-style';
-        st.textContent = '.ytp-caption-window-container{display:none!important}';
+        st.textContent = '.ytp-caption-window-container,.caption-window,.ytp-caption-segment{display:none!important}';
         document.head.appendChild(st);
       }
       if (!on) st?.remove();
@@ -187,9 +208,14 @@
         .split(/(\s+)/)
         .map((w) => (/\S/.test(w) ? `<span class="word">${esc(w)}</span>` : w))
         .join('');
-      const showOrig = S().displayMode !== 'translation';
+      const same = c.tr != null && c.tr === c.text; // 已经是目标语言（如 YouTube 自动翻译的字幕）：只显示一行
+      if (same) {
+        box.innerHTML = `<div><span class="line orig">${words}</span></div>`;
+        return;
+      }
       box.innerHTML =
-        (showOrig ? `<div><span class="line orig">${words}</span></div>` : '') +
+        // 双语字幕始终显示原文 + 译文两行，不跟随网页的“仅显示译文”（那是网页正文的设置）
+        `<div><span class="line orig">${words}</span></div>` +
         `<div><span class="line tr">${c.tr == null ? '…' : esc(c.tr)}</span></div>`;
     }
 
@@ -212,15 +238,26 @@
 
     window.addEventListener('message', (e) => {
       if (e.source !== window || e.data?.source !== 'glimmer-yt') return;
+      if (e.data.body && e.data.body.length >= 20) lastCaption = { url: e.data.url, body: e.data.body };
       onCaptions(e.data.url, e.data.body);
     });
-    document.addEventListener('yt-navigate-start', reset);
+    document.addEventListener('yt-navigate-start', () => {
+      lastCaption = null;
+      reset();
+    });
 
     G.onSettings = (s, prev) => {
+      const was = enabled;
       enabled = !!s.youtube?.enabled;
       if (!enabled) {
         reset();
         hideNative(false);
+        return;
+      }
+      // 关闭后再打开：用最近一次截到的字幕重新显示（YouTube 不会再请求一次）
+      if (!was && lastCaption) {
+        onCaptions(lastCaption.url, lastCaption.body);
+        return;
       }
       if (prev.targetLang !== s.targetLang || prev.engine !== s.engine) {
         const key = trackKey;

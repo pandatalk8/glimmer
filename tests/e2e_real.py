@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover input popup drawer toolbar webcomp build always import style ctxmenu
+场景：wiki hn mdn hover yt input popup drawer toolbar webcomp build always import style ctxmenu
 """
 import asyncio, functools, http.server, json, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -185,6 +185,56 @@ async def main():
                 check(f'按 Alt 指向{name}：译文出现在它下方', await page.evaluate(q) == 1)
             await page.close()
 
+        # ---------- YouTube 双语字幕（真实页面 + 模拟字幕数据）----------
+        # 自动化浏览器里 YouTube 返回空字幕，所以用与 yt-hook.js 相同的消息格式送入一份字幕
+        if run('yt'):
+            print('\n[yt] YouTube 双语字幕：显示、关闭再开启、YouTube 自动翻译的字幕')
+            page = await ctx.new_page()
+            await page.goto('https://www.youtube.com/watch?v=arj7oStGLkU', wait_until='domcontentloaded', timeout=60000)
+            await page.wait_for_selector('#movie_player', timeout=30000)
+            await page.evaluate("document.querySelector('video')?.pause()")
+            await page.wait_for_timeout(3000)  # 等内容脚本里的字幕模块就绪（它在 content.js 初始化后才开始监听）
+            CAP = json.dumps({'events': [{'tStartMs': 0, 'dDurationMs': 3600000, 'segs': [{'utf8': 'Knowledge is power.'}]}]})
+            POST = """([url, body])=>window.postMessage({source:'glimmer-yt', url, body}, '*')"""
+            SUB = """()=>document.querySelector('#movie_player glimmer-ui')?.shadowRoot?.querySelector('.yt-sub')?.innerText||''"""
+            async def sub_text(want_lines, tries=30):
+                t = ''
+                for _ in range(tries):
+                    t = await page.evaluate(SUB)
+                    if t and '…' not in t and t.count('\n') + 1 >= want_lines:
+                        break
+                    await page.wait_for_timeout(300)
+                return t
+            await sw.evaluate(SET, {'displayMode': 'bilingual', 'youtube': {'enabled': True}})
+            await page.evaluate(POST, ['https://www.youtube.com/api/timedtext?v=arj7oStGLkU&lang=en&fmt=json3', CAP])
+            t = await sub_text(2)
+            check('双语字幕：英文原文 + 中文译文两行', 'Knowledge is power.' in t and '知识' in t, t)
+            check('隐藏 YouTube 自带字幕', await page.evaluate("!!document.getElementById('glimmer-yt-style')"))
+            await sw.evaluate(SET, {'youtube': {'enabled': False}})
+            await page.wait_for_timeout(800)
+            check('关闭双语字幕：我们的字幕消失、自带字幕恢复',
+                  await page.evaluate(SUB) == '' and not await page.evaluate("!!document.getElementById('glimmer-yt-style')"))
+            await sw.evaluate(SET, {'youtube': {'enabled': True}})
+            t = await sub_text(2)
+            check('再次开启：不用重新加载视频，双语字幕恢复', 'Knowledge is power.' in t and '知识' in t, t)
+            await sw.evaluate(SET, {'displayMode': 'translation'})
+            await page.wait_for_timeout(800)
+            t = await sub_text(2)
+            check('网页设为“仅显示译文”时，字幕仍显示原文 + 译文两行', 'Knowledge is power.' in t and '知识' in t, t)
+            await sw.evaluate(SET, {'displayMode': 'bilingual'})
+            # 播放器开着“自动翻译成中文”：截到的已是中文（带 tlang），取不到原文时只显示一行，不再重复翻译
+            ZH = json.dumps({'events': [{'tStartMs': 0, 'dDurationMs': 3600000, 'segs': [{'utf8': '知识就是力量。'}]}]})
+            await page.evaluate(POST, ['https://www.youtube.com/api/timedtext?v=arj7oStGLkU&lang=en&tlang=zh-Hans&fmt=json3&glimmer_test=1', ZH])
+            for _ in range(40):  # 插件会先尝试取原文字幕（异步），等字幕切换过来
+                t = await page.evaluate(SUB)
+                if '知识就是力量' in t:
+                    break
+                await page.wait_for_timeout(300)
+            await page.wait_for_timeout(1500)
+            t = await page.evaluate(SUB)
+            check('YouTube 自动翻译的中文字幕：只显示一行，不重复翻译', t.strip() == '知识就是力量。', t)
+            await page.close()
+
         # ---------- 输入框翻译 ----------
         if run('input'):
             print('\n[input] 输入框三空格翻译')
@@ -202,7 +252,10 @@ async def main():
               badge:document.querySelector('glimmer-ui').shadowRoot.querySelector('.input-badge')?.textContent||''})""")
             check('三空格后立刻去掉空格并显示“翻译中…”（不会让人以为只打出了三个空格）',
                   not snap['v'].endswith('   ') and (snap['badge'] == '翻译中…' or all(ord(c) < 128 for c in snap['v'])), snap)
-            await page.wait_for_timeout(2500)
+            for _ in range(32):  # 网络慢时最多等 8 秒
+                if await page.locator('glimmer-ui >> .input-badge').count() == 0:
+                    break
+                await page.wait_for_timeout(250)
             check('翻译完成后“翻译中…”标签消失', await page.locator('glimmer-ui >> .input-badge').count() == 0)
             v = await page.locator('#box').input_value()
             check('textarea 内容被替换为英文', v and all(ord(c) < 128 for c in v) and len(v) > 5, v)
@@ -265,6 +318,14 @@ async def main():
             await pp.locator('#quickInput').press('Enter')
             out = await quick_result(pp)
             check('快速翻译 中→英（自动互译）', 'knowledge' in out.lower(), out)
+            head = await pp.locator('.quick .q-head').inner_text()
+            check('快速翻译有标题“快速翻译”和“翻译”按钮（一眼看得出是输入框）',
+                  '快速翻译' in head and await pp.locator('.quick [data-act=quick]').count() == 1, head)
+            await pp.locator('#quickInput').fill('Good morning')
+            await pp.locator('.quick [data-act=quick]').click()
+            out = await quick_result(pp)
+            check('点“翻译”按钮也能翻译', '早' in out, out)
+            await pp.locator('.quick').screenshot(path=f'{OUTPUT}/panel-quick.png')
 
             await pp.locator('.rail [data-go=settings]').click()
             await pp.wait_for_timeout(200)

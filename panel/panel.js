@@ -401,7 +401,9 @@ const VIEWS = {
       <div class="card words-card">${wordsCard}</div>
 
       <div class="card box quick">
-        <textarea id="quickInput" rows="2" placeholder="输入文字，Enter 翻译（中英自动互译）">${esc(quick.text)}</textarea>
+        <div class="q-head"><span class="t">快速翻译</span><span class="s">中英自动互译</span></div>
+        <textarea id="quickInput" rows="2" placeholder="输入单词或句子">${esc(quick.text)}</textarea>
+        <div class="q-actions"><span class="q-tip">Enter 翻译 · Shift+Enter 换行</span><button class="gold sm" data-act="quick">翻译</button></div>
         ${quick.out ? `<div class="qout ${quick.err ? 'err' : ''}" id="quickOut">${esc(quick.out)}</div>` : ''}
       </div>
     </div>`;
@@ -789,6 +791,11 @@ document.addEventListener('click', async (e) => {
         localStorage.setItem('gl-expand', expanded ? '1' : '0');
       } catch {}
       return render();
+    case 'quick': {
+      const t = $('#quickInput')?.value.trim();
+      if (t) quickTranslate(t);
+      return;
+    }
     case 'speak': {
       const w = findWord(d.k);
       if (!w) return;

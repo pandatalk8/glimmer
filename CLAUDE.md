@@ -24,7 +24,7 @@
 
 ```bash
 python3 tests/e2e.py          # 核心回归，36 项
-python3 tests/e2e_real.py     # 真实网站与交互，67 项
+python3 tests/e2e_real.py     # 真实网站与交互，75 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），62 项
 deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅与翻译代理逻辑，19 项
 python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），24 项

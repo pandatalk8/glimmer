@@ -58,8 +58,28 @@ async def main():
         ok = bool(sub) and '\n' in sub
         print(('PASS' if ok else 'FAIL') + '  出现双语字幕：', repr(sub))
         print(('PASS' if native_hidden else 'FAIL') + '  原生字幕已隐藏')
+
+        # 在面板中关闭“双语字幕”再打开：字幕要能恢复（YouTube 不会重新请求同一条字幕）
+        sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event('serviceworker')
+        SET_YT = """async(on)=>{const {settings}=await chrome.storage.local.get('settings');
+          await chrome.storage.local.set({settings:{...(settings||{}),youtube:{...(settings?.youtube||{}),enabled:on}}})}"""
+        await sw.evaluate(SET_YT, False)
+        await page.wait_for_timeout(1500)
+        off = await page.evaluate("""()=>document.querySelector('#movie_player glimmer-ui')?.shadowRoot?.querySelector('.yt-sub')?.innerText||''""")
+        native_back = not await page.evaluate("!!document.getElementById('glimmer-yt-style')")
+        await sw.evaluate(SET_YT, True)
+        again = ''
+        for _ in range(30):
+            again = await page.evaluate("""()=>document.querySelector('#movie_player glimmer-ui')?.shadowRoot?.querySelector('.yt-sub')?.innerText||''""")
+            if again and '\n' in again and '…' not in again:
+                break
+            await page.wait_for_timeout(500)
+        ok2 = off == '' and native_back
+        ok3 = bool(again) and '\n' in again
+        print(('PASS' if ok2 else 'FAIL') + '  关闭双语字幕：我们的字幕消失、原生字幕恢复', repr(off))
+        print(('PASS' if ok3 else 'FAIL') + '  再次开启：双语字幕恢复', repr(again))
         await ctx.close()
-        sys.exit(0 if ok and native_hidden else 1)
+        sys.exit(0 if ok and native_hidden and ok2 and ok3 else 1)
 
 
 asyncio.run(main())
