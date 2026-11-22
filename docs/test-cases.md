@@ -171,7 +171,7 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 | C-10 | 没有用量卡片 | 免费版 | 账户页 | 没有“本月 AI 用量”；显示“开通会员”卡片；从没付过款时不显示“查看账单与发票”（只点过“开通”但取消了支付也不显示） | |
 | C-15 | 完整设置页的账户分区 | 免费版 | 完整设置页 → 左侧“账户与会员” | 显示邮箱、“免费版”、“开通会员”“退出登录”；没有“管理订阅” | |
 | C-16 | 在完整设置页登录 | 先退出登录 | 完整设置页 → 账户与会员 → “登录 / 注册”，在弹窗中登录 | 弹窗内是面板的登录页；登录成功后弹窗自动关闭，分区显示邮箱与会员等级 | |
-| C-11 | 服务端兜底（选做，需懂一点技术） | 免费版 | 在扩展后台 Console 执行 `chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['hi'],noCache:true}).then(console.log)` | 返回 `ok: false`，错误为“该翻译引擎需要 Premium 会员…”。说明即使绕过界面，后端也会拦截 | |
+| C-11 | 服务端兜底（选做，需懂一点技术） | 免费版 | 打开完整设置页，按 F12 打开它的 Console（不是扩展后台 Service Worker 的 Console：后台给自己发消息收不到回复），执行 `chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['hi'],noCache:true}).then(console.log)` | 返回 `ok: false`，错误为“该翻译引擎需要 Premium 会员…”。说明即使绕过界面，后端也会拦截 | |
 
 C-08 用的代码（测试后执行 `chrome.storage.local.set({words:[]})` 清空）：
 
