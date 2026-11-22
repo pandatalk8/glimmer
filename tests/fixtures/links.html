@@ -9,6 +9,8 @@
   .card .overlay { position: absolute; inset: 0; z-index: 1; }
   .card h3 a { color: inherit; text-decoration: none; }
   a.block { display: block; padding: 8px 0; }
+  /* 读屏专用文字：看不见，但仍是文字节点（Reddit 帖子卡片的整卡链接里就有） */
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -16,7 +18,7 @@
 
   <!-- Reddit / 新闻列表常见写法：整张卡片上盖一层透明链接 -->
   <article class="card" id="card">
-    <a class="overlay" href="#post" aria-label="Open post"></a>
+    <a class="overlay" href="#post"><span class="sr-only">I built a quiet online room where strangers just study together</span></a>
     <h3 id="cardTitle"><a href="#post">I built a quiet online room where strangers just study together</a></h3>
     <p>Posted by someone six days ago</p>
   </article>

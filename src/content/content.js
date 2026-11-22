@@ -729,9 +729,26 @@
   // ---------- 悬停翻译（按住 Alt 悬停段落） ----------
   let mouse = { x: 0, y: 0 };
   document.addEventListener('mousemove', (e) => (mouse = { x: e.clientX, y: e.clientY }), { passive: true });
-  // 鼠标下真正有文字的段落。不能只看最上层元素：Reddit、新闻列表常在整张卡片上盖一层透明链接，
-  // 最上层是这层没有文字的链接，下面才是标题。所以按层叠顺序从上往下找第一个有文字的块。
+  // 在 root 下找屏幕上正好盖住 (x, y) 的文字节点；看不见的文字（读屏专用、被裁剪的）占不到这个位置，会被跳过
+  function textNodeAt(root, x, y) {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    let t;
+    while ((t = w.nextNode())) {
+      if (!t.nodeValue.trim() || t.parentElement?.closest('gl-trans,glimmer-ui')) continue;
+      range.selectNodeContents(t);
+      for (const r of range.getClientRects()) {
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return t;
+      }
+    }
+    return null;
+  }
+
+  // 鼠标下真正要翻译的段落。不能只看最上层元素：Reddit、新闻列表常在整张卡片上盖一层透明链接，
+  // 链接里还可能藏着读屏专用的标题文字。所以按层叠顺序从上往下，找第一个“屏幕上的文字正好在指针下”的块；
+  // 指针落在行间空白时，退回到第一个有可见文字的块。
   function hoverHit(x, y) {
+    let fallback = null;
     for (const el of document.elementsFromPoint(x, y)) {
       if (el === document.body || el === document.documentElement) break;
       if (el.closest('glimmer-ui')) return null; // 指在扩展自己的界面上
@@ -739,9 +756,11 @@
       if (tr) return { el, block: tr.parentElement };
       const block = nearestBlock(el);
       if (!block || block === document.body) continue;
-      if (block.querySelector(':scope > gl-trans') || (block.innerText || '').trim().length > 1) return { el, block };
+      const t = textNodeAt(block, x, y);
+      if (t) return { el: t.parentElement, block: nearestBlock(t.parentElement) };
+      if (!fallback && (block.querySelector(':scope > gl-trans') || (block.innerText || '').trim().length > 1)) fallback = { el, block };
     }
-    return null;
+    return fallback;
   }
 
   document.addEventListener('keydown', (e) => {
