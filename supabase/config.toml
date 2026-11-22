@@ -27,6 +27,10 @@ verify_jwt = false
 [functions.billing-return]
 verify_jwt = false
 
+# 注册前检查邮箱域名能否收信：用户还没登录，publishable key 不是 JWT，需关闭 JWT 校验
+[functions.check-email]
+verify_jwt = false
+
 [functions.billing-checkout]
 verify_jwt = true
 

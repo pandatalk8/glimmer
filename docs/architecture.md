@@ -333,7 +333,7 @@ iframe 中的面板是扩展源（`chrome-extension://`）页面，可以直接�
 | --- | --- | --- |
 | 注册、登录、令牌 | Supabase Auth | 托管 |
 | 会员状态、用量、生词 | Supabase 数据库：`profiles`、`subscriptions`、`stripe_events`、`usage_monthly`、`words` | `supabase/migrations/` |
-| 翻译代理、创建支付页、客户门户、接收通知 | Supabase Edge Functions（Deno） | `supabase/functions/` |
+| 翻译代理、创建支付页、客户门户、接收通知、注册前检查邮箱域名 | Supabase Edge Functions（Deno） | `supabase/functions/` |
 | 收款与订阅周期 | Stripe Checkout、客户门户、webhook | 托管 |
 
 ```mermaid

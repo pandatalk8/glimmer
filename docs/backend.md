@@ -42,6 +42,7 @@
 | `supabase/functions/billing-portal` | 打开 Stripe 客户门户（换方案、改卡、取消、发票），需要登录 |
 | `supabase/functions/stripe-webhook` | 接收 Stripe 事件，验证签名后同步会员状态 |
 | `supabase/functions/billing-return` | 支付完成 / 取消 / 邮箱验证后跳转的返回地址。返回纯文本：云端 Supabase 会把 supabase.co 上 GET 请求返回的网页改成 `text/plain` 并加 `sandbox`（防钓鱼），网页会显示成源代码。扩展检测到这个地址后接管标签页：支付回到发起页面，邮箱验证换成扩展内的 `welcome/verified.html` |
+| `supabase/functions/check-email` | 注册前检查邮箱域名有没有邮件服务器（MX 记录），只接收域名。云端 Supabase 不会拒绝填错的域名（如 `a@panda.com`），照样“发出”验证邮件；扩展注册前先问这里，`deliverable: false` 时直接提示填错，最多等 4 秒。`.local`、`.test` 等测试域名放行。无需登录（`--no-verify-jwt`） |
 | `supabase/functions/_shared/billing.ts` | 订阅同步的核心逻辑，有单元测试 |
 | `src/shared/config.js` | 扩展里填写 Supabase 地址和 anon key |
 
@@ -182,6 +183,7 @@ npx supabase functions deploy billing-checkout
 npx supabase functions deploy billing-portal
 npx supabase functions deploy stripe-webhook --no-verify-jwt
 npx supabase functions deploy billing-return --no-verify-jwt
+npx supabase functions deploy check-email --no-verify-jwt
 ```
 
 `stripe-webhook` 和 `billing-return` 必须加 `--no-verify-jwt`：前者由 Stripe 调用（靠 Stripe 签名验证身份），后者是浏览器直接打开的页面。`supabase/config.toml` 中已经写了同样的设置。

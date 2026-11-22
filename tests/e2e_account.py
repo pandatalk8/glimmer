@@ -83,6 +83,10 @@ class Mock(http.server.BaseHTTPRequestHandler):
         # 新版 publishable key 不是 JWT，放进 Authorization 会被 Supabase 拒绝
         if self.headers.get('Authorization') == 'Bearer ' + ANON:
             return self.send(401, {'message': 'Invalid JWT: publishable key used as Authorization'})
+        if u.path == '/functions/v1/check-email':  # 与云端一致：没有邮件服务器的域名收不到信
+            DB.checked = getattr(DB, 'checked', []) + [body.get('domain')]
+            d = body.get('domain') or ''
+            return self.send(200, {'deliverable': None if d.endswith('.local') else d != 'panda.com'})
         if u.path == '/auth/v1/resend':
             DB.resent = getattr(DB, 'resent', []) + [body.get('email')]
             return self.send(200, {})
@@ -283,8 +287,21 @@ async def main():
         await pp.fill('[name=email]', 'alice@example.com')
         await pp.fill('[name=password]', 'secret123')
         await pp.locator('.submit').click()
-        await wait_for(lambda: pp.locator('.msg').count())
+        for _ in range(20):  # 注册前要先检查邮箱域名，提示会晚一点出现
+            if '已注册' in await msg(pp):
+                break
+            await pp.wait_for_timeout(200)
         check('重复注册显示“已注册”', '已注册' in await msg(pp), await msg(pp))
+        await pp.fill('[name=email]', 'a@panda.com')
+        await pp.locator('.submit').click()
+        for _ in range(20):
+            if '收不到邮件' in await msg(pp):
+                break
+            await pp.wait_for_timeout(200)
+        check('域名没有邮件服务器（a@panda.com）：注册前拦下，提示检查邮箱地址，不创建账号',
+              'panda.com 没有邮件服务器' in await msg(pp) and 'a@panda.com' not in DB.users
+              and getattr(DB, 'checked', [])[-1:] == ['panda.com'], await msg(pp))
+        await pp.fill('[name=email]', 'alice@example.com')
         check('出错后注册按钮仍显示“免费注册”', await pp.locator('.submit').inner_text() == '免费注册', await pp.locator('.submit').inner_text())
         await pp.fill('[name=email]', 'tester1@test.local')
         await pp.locator('.submit').click()

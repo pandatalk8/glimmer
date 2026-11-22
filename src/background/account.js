@@ -212,6 +212,19 @@ export async function getToken() {
 
 // ---------- 账户操作 ----------
 export async function signUp({ email, password }) {
+  // 先查邮箱域名能不能收信：云端不会拒绝填错的域名（如 a@panda.com），照样“发出”验证邮件，用户会一直等。
+  // 只把域名发给后端；查不出来（网络、旧后端没有这个函数）时放行
+  const domain = String(email).split('@').pop().trim().toLowerCase();
+  // 最多等 4 秒：网络不好时跳过检查直接注册，不能让辅助检查拖慢注册
+  const chk = await Promise.race([
+    call('/functions/v1/check-email', { method: 'POST', body: { domain } }).catch(() => null),
+    new Promise((r) => setTimeout(() => r(null), 4000)),
+  ]);
+  if (chk?.deliverable === false) {
+    const e = new Error(`这个邮箱收不到邮件：${domain} 没有邮件服务器，请检查邮箱地址是否填错`);
+    e.code = 'undeliverable';
+    throw e;
+  }
   const s = await call('/auth/v1/signup', { method: 'POST', body: { email, password } });
   // 开启邮箱验证时，注册成功但没有会话
   if (!s?.access_token) return { needConfirm: true, email };
