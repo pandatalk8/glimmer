@@ -138,8 +138,10 @@ function mergeWords(a = [], b = []) {
 }
 
 async function switchWordsOwner(next, prevAuth) {
-  const st = await chrome.storage.local.get(['words', 'wordsTombstones', OWNER_KEY, STASH_KEY]);
-  const cur = st[OWNER_KEY] ?? (prevAuth?.user?.id || 'guest'); // 旧版本没有记录归属：属于当时登录的账号
+  const st = await chrome.storage.local.get(['words', 'wordsTombstones', OWNER_KEY, STASH_KEY, 'wordsSyncedAt']);
+  // 旧版本没有记录归属：属于当时登录的账号；未登录时，如果这些生词和云端同步过（wordsSyncedAt），
+  // 说明是之前某个会员账号留下的（旧版退出登录不清空生词本），归为 legacy：单独存放，不并入任何新登录的账号
+  const cur = st[OWNER_KEY] ?? (prevAuth?.user?.id || (st.wordsSyncedAt ? 'legacy' : 'guest'));
   if (cur === next) {
     if (st[OWNER_KEY] == null) await chrome.storage.local.set({ [OWNER_KEY]: next });
     return;

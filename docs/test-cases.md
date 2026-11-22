@@ -179,7 +179,7 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 | C-16 | 在完整设置页登录 | 先退出登录 | 完整设置页 → 账户与会员 → “登录 / 注册”，在弹窗中登录 | 弹窗内是面板的登录页；登录成功后弹窗自动关闭，分区显示邮箱与会员等级 | |
 | C-11 | 服务端兜底（选做，需懂一点技术） | 免费版 | 打开完整设置页，按 F12 打开它的 Console（不是扩展后台 Service Worker 的 Console：后台给自己发消息收不到回复），执行 `chrome.runtime.sendMessage({type:'translate',engine:'deepl',texts:['hi'],noCache:true}).then(console.log)` | 返回 `ok: false`，错误为“该翻译引擎需要 Premium 会员…”。说明即使绕过界面，后端也会拦截 | |
 
-C-08 用的代码（测试后执行 `chrome.storage.local.set({words:[]})` 清空）：
+C-08 用的代码（**测试后务必执行 `chrome.storage.local.set({words:[]})` 清空**，否则这 100 个测试词会留在本机，之后登录会员账号时会被同步到它的云端）：
 
 ```js
 chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'word' + i, t: '', url: '', ts: Date.now(), m: false, u: Date.now() })) })

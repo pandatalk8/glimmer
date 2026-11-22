@@ -495,7 +495,7 @@ settings
 
 读取时与 `DEFAULT_SETTINGS` 深合并：对象递归合并，数组整体替换。新版本增加设置项时只需在默认值里添加，老用户无需迁移脚本。旧版本留下的 `engines`、`llm`（API Key 与提示词）读取时丢弃，安装或更新时清除。
 
-**生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳, m: 是否已掌握, u: 最后修改时间 }`，按小写去重；免费版上限 100 条，会员上限 5000 条。删除记入 `wordsTombstones { 小写原文: 删除时间 }`，会员登录后与云端 `words` 表逐词比较修改时间，较新者为准，删除以墓碑形式同步到其他设备；本地变化 2 秒后自动同步。**生词本按账号分开**：`wordsOwner` 记录当前 `words` 属于谁（用户 ID 或 `guest`），其他账号的生词暂存在 `wordsStash[owner]`；`saveSession`（换了用户）与 `clearSession`（退出）时切换，未登录生词本在登录时并入该账号；同步写回前确认账号未变，避免换账号期间把旧账号的生词写进新账号。“本页生词”由面板把整个生词表发给内容脚本，内容脚本对 `document.body.innerText` 分词后取交集，不额外存储。
+**生词本**（`chrome.storage.local` 键 `words`）：数组，最新在前，每项 `{ w: 原文, t: 译文, url: 来源页, ts: 时间戳, m: 是否已掌握, u: 最后修改时间 }`，按小写去重；免费版上限 100 条，会员上限 5000 条。删除记入 `wordsTombstones { 小写原文: 删除时间 }`，会员登录后与云端 `words` 表逐词比较修改时间，较新者为准，删除以墓碑形式同步到其他设备；本地变化 2 秒后自动同步。**生词本按账号分开**：`wordsOwner` 记录当前 `words` 属于谁（用户 ID 或 `guest`），其他账号的生词暂存在 `wordsStash[owner]`；`saveSession`（换了用户）与 `clearSession`（退出）时切换，未登录生词本在登录时并入该账号；同步写回前确认账号未变，避免换账号期间把旧账号的生词写进新账号。升级迁移：旧版本没有 `wordsOwner`，登录中则归当前账号；未登录时如果有 `wordsSyncedAt`（和云端同步过），说明是某个会员留下的，归为 `legacy` 单独存放、永不并入。“本页生词”由面板把整个生词表发给内容脚本，内容脚本对 `document.body.innerText` 分词后取交集，不额外存储。
 
 **账户**（`chrome.storage.local`）：`auth` 保存会话 `{ access_token, refresh_token, expires_at, user }`；`account` 保存界面显示用的会员状态 `{ email, plan, status, periodEnd, cancelAtPeriodEnd, hasBilling, usage: { tokens, limit, month } }`（`plan` 为 `free` / `premium` / `premium_plus`），只是缓存，以数据库为准。
 

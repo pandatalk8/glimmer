@@ -513,6 +513,13 @@ async def main():
         await ex.evaluate(M, {'type': 'accountSignOut'})
         await ex.evaluate(M, {'type': 'accountSignIn', 'email': 'ann@example.com', 'password': 'secret123'})
         check('换回原账号：之前的生词恢复，且没有混入别人的', await ex.evaluate(W) == ['annword', 'guestword'], await ex.evaluate(W))
+        # 旧版本留下的生词（旧版退出登录不清空，且和云端同步过）：升级后不能并入新登录的账号
+        await ex.evaluate(M, {'type': 'accountSignOut'})
+        await ex.evaluate("""()=>chrome.storage.local.remove(['wordsOwner','wordsStash']).then(()=>chrome.storage.local.set({
+          words:[{w:'word0',t:'',url:'',ts:Date.now(),m:false,u:Date.now()},{w:'word1',t:'',url:'',ts:Date.now(),m:false,u:Date.now()}],
+          wordsSyncedAt: Date.now()}))""")
+        await ex.evaluate(M, {'type': 'accountSignUp', 'email': 'erin@example.com', 'password': 'secret123'})
+        check('旧版本留下、和云端同步过的生词：不并入新注册的账号', await ex.evaluate(W) == [], await ex.evaluate(W))
         await ex.close()
         await ctx.close()
 
