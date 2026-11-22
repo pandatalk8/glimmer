@@ -62,6 +62,7 @@
 
 ### 修复
 
+- **从商店安装的插件也会显示“后端（开发版）”**：完整设置页“高级”里这一行带 `hidden` 属性，但 `.field` 的 `display: flex` 盖过了它，商店用户会看到一个空的下拉框。现在只有开发版显示
 - **悬停翻译对带链接的文字无效**：在 Reddit、新闻列表等整张卡片可点击的页面，按住 `Alt`（Mac 为 `Option`）指向标题没有反应——鼠标下最上层是一层透明的整卡链接，Reddit 普通帖子的这层链接里还藏着读屏专用的标题文字（看不见）。现在按层叠顺序从上往下，找屏幕上正好位于指针下、并且用户看得见的文字所在的段落；裁剪成 1 像素、透明、`visibility: hidden` 的文字都会跳过（广告帖之前已能翻译，普通帖子标题这次修好）
 - **注册时用无法收信的邮箱（如 `test.local`）提示“邮箱格式不正确”**：云端会拒绝不能收信的域名，原提示让人以为格式写错了；现在提示“无法向这个邮箱发送验证邮件，请使用能正常收信的真实邮箱”。验证邮件发送超限时单独提示“验证邮件发送太频繁，请稍后再试，或使用 Google 注册”
 - 登录 / 注册出错后，主按钮文字变成“使用邮箱注册 / 使用邮箱登录”，与页面上的“免费注册 / 登录”不一致
@@ -79,6 +80,7 @@
 
 ### 测试
 
+- 核心回归新增“商店版没有开发入口”（不显示后端切换、连接云端、不能切到本地；`tests/e2e.py` 共 35 项）；`tests/e2e.py` 支持 `GLIMMER_EXT_DIR` 指定加载的插件目录
 - 真实网站测试新增带链接文字的悬停翻译（段落内链接、整卡透明链接下的标题——结构与 Reddit 实际 HTML 一致、透明读屏文字叠在标题上、块级链接；检查译文出现在所指的标题或段落里；测试页 `tests/fixtures/links.html`，`tests/e2e_real.py` 共 61 项）；测试用例新增 B-06b
 - 账户测试新增“无法收信的邮箱”和“出错后按钮文字”检查（`tests/e2e_account.py` 共 62 项）；测试用例新增 A-03b，A-04 与 1.4 节写明云端必须用真实邮箱
 - 核心回归新增“后端连不上时改用 Google”检查（`tests/e2e.py` 共 32 项）；测试用例新增 C-12b（未登录 + DeepL）、C-12c（付费引擎故障）
@@ -104,6 +106,8 @@
 
 ### 其他
 
+- **新增打包脚本** `scripts/package.py`：按版本号生成 `dist/glimmer-v<版本>.zip`，只放运行所需文件，并自检引用完整、没有密钥、打包后的插件能通过核心回归；`dist/` 加入忽略
+- 判断开发版不再缓存结果（每次读取 `installType`），便于测试
 - 数据库迁移 `20261119000000_tiers_usage_words.sql`：会员等级改为 `free` / `premium` / `premium_plus`（旧的 `pro` 迁移为 `premium_plus`）、`is_member` 函数、`usage_monthly` 用量表与原子累加函数 `add_usage`、`words` 生词云同步表（只有会员可读写）
 - 新增 Edge Function `translate`（翻译代理）：校验登录、会员等级、Premium+ 每月 Token 额度（`TOKEN_LIMIT_MONTHLY`，默认 2000 万）、单次大小，调用服务商并记录用量；`billing-checkout` 按方案选择价格，已是会员时返回 `use_portal`
 - 新环境变量：`STRIPE_PRICE_PREMIUM_YEARLY`、`STRIPE_PRICE_PLUS_MONTHLY`、`STRIPE_PRICE_PLUS_YEARLY`，以及服务商 Key `DEEPL_API_KEY`、`AZURE_TRANSLATOR_KEY` / `AZURE_TRANSLATOR_REGION`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`（可选 `*_MODEL`）

@@ -6,17 +6,13 @@ import { PLAN_NAME, PLAN_RANK } from '../shared/settings.js';
 const AUTH_KEY = 'auth';
 const ACCOUNT_KEY = 'account';
 
-let devInstall;
-/** 是否以“加载已解压的扩展程序”方式加载（开发版） */
+/** 是否以“加载已解压的扩展程序”方式加载（开发版）。从商店安装时为 normal：看不到后端切换，也不会自动连本机后端 */
 async function isDevInstall() {
-  if (devInstall === undefined) {
-    try {
-      devInstall = (await chrome.management.getSelf()).installType === 'development';
-    } catch {
-      devInstall = false;
-    }
+  try {
+    return (await chrome.management.getSelf()).installType === 'development';
+  } catch {
+    return false;
   }
-  return devInstall;
 }
 
 const filled = (c) => !!(c?.supabaseUrl && c?.supabaseAnonKey);

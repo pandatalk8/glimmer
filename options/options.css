@@ -88,6 +88,10 @@ h1 {
   gap: 20px;
   padding: 13px 0;
 }
+/* display: flex 会盖过 hidden 属性；没有这条，商店版也会显示“后端（开发版）” */
+.field[hidden] {
+  display: none;
+}
 .field + .field {
   border-top: 1px solid var(--line);
 }

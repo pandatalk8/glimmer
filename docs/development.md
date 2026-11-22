@@ -263,9 +263,19 @@ await sw.evaluate("""async()=>{const [t]=await chrome.tabs.query({active:true});
 ## 七、打包发布
 
 ```bash
-# 在项目根目录打包（排除文档和开发文件）
-zip -r glimmer-v0.3.0.zip manifest.json build.json src panel options premium welcome styles icons -x '*.DS_Store'
+sh scripts/write_build_info.sh   # 写入当前提交编号（build.json）
+python3 scripts/package.py       # 生成 dist/glimmer-v<版本>.zip
 ```
+
+打包脚本只放插件运行需要的文件（`manifest.json`、`build.json`、`src/`、`panel/`、`options/`、`premium/`、`welcome/`、`styles/`、`icons/`），然后自检三步，任何一步失败都不会留下 zip：
+
+| 检查 | 内容 |
+| --- | --- |
+| 引用完整 | manifest、各页面、样式、脚本引用的文件都在包里（曾经漏掉 `premium/`、`welcome/`，方案页和欢迎页会打不开） |
+| 没有密钥 | 包里没有 `.env` 文件和服务端密钥 |
+| 能用 | 从解压出的目录加载插件跑一遍核心回归（`tests/e2e.py` 通过环境变量 `GLIMMER_EXT_DIR` 加载指定目录）；`--skip-tests` 可跳过 |
+
+新增运行目录时，加到 `scripts/package.py` 的 `INCLUDE` 中。
 
 上传到 [Chrome 应用商店开发者后台](https://chrome.google.com/webstore/devconsole)。发布前：
 

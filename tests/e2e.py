@@ -14,6 +14,8 @@ from playwright.async_api import async_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 OUTPUT = os.path.join(ROOT, 'tests', 'output')
+# 加载哪个目录的插件：默认是仓库本身；打包脚本会指向解压后的 zip（scripts/package.py）
+EXT = os.environ.get('GLIMMER_EXT_DIR') or ROOT
 HEADED = '--headed' in sys.argv
 PAGE_URL = 'http://127.0.0.1:8765/article.html'
 
@@ -71,7 +73,7 @@ async def main():
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
             profile, channel='chromium', headless=not HEADED,
-            args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'],
             viewport={'width': 1100, 'height': 900})
         sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event('serviceworker')
         eid = sw.url.split('/')[2]
@@ -259,6 +261,22 @@ async def main():
         await page.wait_for_selector('glimmer-ui >> .toast', timeout=5000)
         tip = await page.locator('glimmer-ui >> .toast').first.inner_text()
         check('网页提示“DeepSeek 暂时无法使用，已改用 Google 翻译”', 'DeepSeek 暂时无法使用，已改用 Google 翻译' in tip, tip)
+
+        # 7. 从商店安装（installType = normal）：看不到“后端（开发版）”，不能切到本地，也不会自动连本机后端
+        print('\n[7] 商店版没有开发入口')
+        await sw.evaluate("""async()=>{await chrome.storage.local.remove('backendOverride');
+          chrome.management.getSelf = async () => ({ installType: 'normal' });}""")
+        op = await ctx.new_page()
+        await op.goto(f'chrome-extension://{eid}/options/options.html#advanced')
+        await op.wait_for_timeout(800)
+        check('完整设置页不显示“后端（开发版）”', await op.locator('#devBackendRow').is_hidden())
+        info = await op.evaluate("chrome.runtime.sendMessage({type:'devBackend'})")
+        check('商店版连接 config.js 中的云端，不会自动连本机', info.get('ok') and info['data']['dev'] is False
+              and info['data'].get('source') == 'config' and not info['data'].get('local'), info)
+        sw_local = await op.evaluate("chrome.runtime.sendMessage({type:'devBackend', target:'local'})")
+        check('商店版不能切换到本地后端', not sw_local.get('ok') and '只有开发版' in (sw_local.get('error') or ''), sw_local)
+        await op.close()
+        await sw.evaluate("()=>{ delete chrome.management.getSelf; }")
 
         await ctx.close()
 
