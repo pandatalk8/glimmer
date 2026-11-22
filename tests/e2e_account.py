@@ -474,6 +474,27 @@ async def main():
         await wait_for(lambda: op.locator('#acctBox:has-text("Premium+ 会员")').count(), 8)
         check('设置页中登录：弹窗内登录成功后自动关闭并显示会员信息', 'Premium+ 会员' in await op.locator('#acctBox').inner_text(), await op.locator('#acctBox').inner_text())
         await op.close()
+
+        # 生词本按账号分开：换账号后看不到上一个人的生词；未登录时收藏的并入登录的账号
+        print('\n[生词本归属] 换账号不混用生词本')
+        ex = await ctx.new_page()
+        await ex.goto(f'chrome-extension://{eid}/panel/panel.html')
+        M = '(m)=>chrome.runtime.sendMessage(m)'
+        W = "()=>chrome.storage.local.get('words').then(r=>(r.words||[]).map(w=>w.w).sort())"
+        await ex.evaluate(M, {'type': 'accountSignOut'})
+        await ex.evaluate("()=>chrome.storage.local.set({words:[{w:'guestword',t:'',url:'',ts:Date.now(),m:false,u:Date.now()}]})")
+        await ex.evaluate(M, {'type': 'accountSignUp', 'email': 'ann@example.com', 'password': 'secret123'})
+        check('登录后：未登录时收藏的生词并入这个账号', await ex.evaluate(W) == ['guestword'], await ex.evaluate(W))
+        await ex.evaluate(M, {'type': 'toggleWord', 'word': 'annword', 'trans': '', 'url': ''})
+        await ex.evaluate(M, {'type': 'accountSignOut'})
+        check('退出登录后：生词本换成空的未登录生词本', await ex.evaluate(W) == [], await ex.evaluate(W))
+        await ex.evaluate(M, {'type': 'accountSignUp', 'email': 'dave@example.com', 'password': 'secret123'})
+        check('换成另一个账号：看不到上一个账号的生词', await ex.evaluate(W) == [], await ex.evaluate(W))
+        await ex.evaluate(M, {'type': 'toggleWord', 'word': 'daveword', 'trans': '', 'url': ''})
+        await ex.evaluate(M, {'type': 'accountSignOut'})
+        await ex.evaluate(M, {'type': 'accountSignIn', 'email': 'ann@example.com', 'password': 'secret123'})
+        check('换回原账号：之前的生词恢复，且没有混入别人的', await ex.evaluate(W) == ['annword', 'guestword'], await ex.evaluate(W))
+        await ex.close()
         await ctx.close()
 
     failed = [n for n, ok in results if not ok]

@@ -120,14 +120,59 @@ async function call(path, { method = 'GET', body, token, headers = {} } = {}) {
   return data;
 }
 
+// ---------- 生词本归属：按账号分开存放 ----------
+// 生词本存在本机。不区分账号的话，换账号后会看到上一个人的生词，会员同步还会把它们传进新账号的云端。
+// 当前生词本在 words / wordsTombstones；wordsOwner 记录它属于谁（用户 ID，或 'guest' 表示未登录）；
+// 其他账号的生词暂存在 wordsStash[owner]。登录时，未登录期间收藏的生词并入该账号。
+const OWNER_KEY = 'wordsOwner';
+const STASH_KEY = 'wordsStash';
+
+function mergeWords(a = [], b = []) {
+  const m = new Map();
+  for (const w of [...a, ...b]) {
+    const k = String(w.w).trim().toLowerCase();
+    const cur = m.get(k);
+    if (!cur || (w.u || w.ts || 0) > (cur.u || cur.ts || 0)) m.set(k, w);
+  }
+  return [...m.values()].sort((x, y) => (y.ts || 0) - (x.ts || 0));
+}
+
+async function switchWordsOwner(next, prevAuth) {
+  const st = await chrome.storage.local.get(['words', 'wordsTombstones', OWNER_KEY, STASH_KEY]);
+  const cur = st[OWNER_KEY] ?? (prevAuth?.user?.id || 'guest'); // 旧版本没有记录归属：属于当时登录的账号
+  if (cur === next) {
+    if (st[OWNER_KEY] == null) await chrome.storage.local.set({ [OWNER_KEY]: next });
+    return;
+  }
+  const stash = st[STASH_KEY] || {};
+  const mine = { words: st.words || [], wordsTombstones: st.wordsTombstones || {} };
+  let target = stash[next] || { words: [], wordsTombstones: {} };
+  if (cur === 'guest' && next !== 'guest') {
+    // 未登录时收藏的生词并入刚登录的账号，未登录生词本随之清空
+    target = { words: mergeWords(target.words, mine.words), wordsTombstones: target.wordsTombstones || {} };
+    delete stash.guest;
+  } else if (mine.words.length || Object.keys(mine.wordsTombstones).length) {
+    stash[cur] = mine;
+  }
+  delete stash[next];
+  await chrome.storage.local.set({
+    words: target.words,
+    wordsTombstones: target.wordsTombstones || {},
+    [OWNER_KEY]: next,
+    [STASH_KEY]: stash,
+  });
+}
+
 // ---------- 会话 ----------
 async function saveSession(s) {
+  const prev = await getAuth();
   const auth = {
     access_token: s.access_token,
     refresh_token: s.refresh_token,
     expires_at: s.expires_at || Math.floor(Date.now() / 1000) + (s.expires_in || 3600),
     user: { id: s.user?.id, email: s.user?.email },
   };
+  if (auth.user.id && prev?.user?.id !== auth.user.id) await switchWordsOwner(auth.user.id, prev); // 刷新令牌（同一用户）不切换
   await chrome.storage.local.set({ [AUTH_KEY]: auth });
   return auth;
 }
@@ -137,6 +182,7 @@ async function getAuth() {
 }
 
 async function clearSession() {
+  await switchWordsOwner('guest', await getAuth()); // 退出：当前账号的生词另存，换成未登录生词本
   await chrome.storage.local.remove([AUTH_KEY]);
   await chrome.storage.local.set({ [ACCOUNT_KEY]: null });
 }
@@ -337,6 +383,7 @@ export async function syncWords() {
   const token = await getToken();
   if (!token) return { skipped: true };
   const auth = await getAuth();
+  const owner = auth.user.id;
   const remote = (await call('/rest/v1/words?select=key,w,t,url,ts,m,deleted,updated_at&limit=10000', { token })) || [];
   const { words = [], wordsTombstones = {} } = await chrome.storage.local.get(['words', 'wordsTombstones']);
 
@@ -372,6 +419,9 @@ export async function syncWords() {
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 5000)
     .map((x) => ({ w: x.w, t: x.t, url: x.url, ts: x.ts, m: !!x.m, u: x.updated_at }));
+  // 同步要等网络：这期间如果换了账号，不能把旧账号的生词写进新账号的生词本
+  const { [OWNER_KEY]: nowOwner } = await chrome.storage.local.get(OWNER_KEY);
+  if (nowOwner !== owner || (await getAuth())?.user?.id !== owner) return { skipped: true };
   lastSynced = JSON.stringify([next, {}]);
   await chrome.storage.local.set({ words: next, wordsTombstones: {}, wordsSyncedAt: Date.now() });
   return { pushed: push.length, total: next.length };
@@ -379,6 +429,8 @@ export async function syncWords() {
 
 /** 生词变化后 2 秒自动同步；同步自身写入的变化不再触发 */
 export function watchWordSync() {
+  // 旧版本升级：现有生词本归当前登录的账号（未登录则为未登录生词本）
+  getAuth().then((a) => switchWordsOwner(a?.user?.id || 'guest', a)).catch(() => {});
   let timer = 0;
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || (!changes.words && !changes.wordsTombstones)) return;
