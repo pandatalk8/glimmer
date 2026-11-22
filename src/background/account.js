@@ -463,9 +463,20 @@ async function returnToOrigin(payTabId, flow, result) {
 
 // 支付 / 管理订阅返回页打开时：等 webhook 把会员状态写入数据库（可能晚几秒），然后回到发起支付的页面并告知结果
 const handledReturns = new Set();
+// 验证邮件链接打开的后端返回页 → 换成扩展里的结果页。云端 Supabase 会把 supabase.co 上的网页改成纯文本显示
+// （防钓鱼），本地后端则正常；两边统一由扩展显示。地址 # 后可能带登录令牌或错误信息：只转交错误信息
+function showVerified(tabId, url) {
+  const hash = new URLSearchParams(new URL(url).hash.slice(1));
+  const q = new URLSearchParams();
+  for (const k of ['error', 'error_code', 'error_description']) if (hash.get(k)) q.set(k, hash.get(k));
+  const target = chrome.runtime.getURL('welcome/verified.html') + (q.toString() ? '?' + q : '');
+  return chrome.tabs.update(tabId, { url: target }).catch(() => {});
+}
+
 export function watchBillingReturn() {
   chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
-    if (info.status !== 'complete' || !tab.url) return;
+    if (!tab.url || (info.status !== 'complete' && !info.url)) return;
+    const early = info.status !== 'complete'; // 地址刚变化、页面还没加载完：只处理邮箱验证（尽快换成扩展页面，不让人看到云端的纯文本）
     let base;
     try {
       base = (await backend()).url;
@@ -474,7 +485,8 @@ export function watchBillingReturn() {
     }
     if (!tab.url.startsWith(`${base}/functions/v1/billing-return`)) return;
     const status = new URL(tab.url).searchParams.get('status') || 'success';
-    if (status === 'verified') return; // 邮箱验证落地页，与支付无关
+    if (status === 'verified') return showVerified(tabId, tab.url); // 邮箱验证落地页，与支付无关
+    if (early) return;
     const once = `${tabId}|${tab.url}`;
     if (handledReturns.has(once)) return;
     handledReturns.add(once);

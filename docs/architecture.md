@@ -348,7 +348,7 @@ flowchart TB
   FN -- "创建支付页 / 客户门户" --> ST["Stripe"]
   ST -- "webhook（签名）" --> WH["stripe-webhook<br/>handleEvent"]
   WH -- "写 subscriptions · profiles" --> DB
-  RET["billing-return 返回页"] -. "tabs.onUpdated" .-> A
+  RET["billing-return 返回地址<br/>（纯文本，扩展接管）"] -. "tabs.onUpdated" .-> A
 ```
 
 **一次订阅的完整过程：**
@@ -385,6 +385,8 @@ sequenceDiagram
 ```
 
 支付返回页打开时，webhook 可能还没到达，所以 `account.js` 在约 30 秒内多次刷新，直到会员等级达到所购方案。随后关闭支付标签页，切回发起支付的页面：发起页是方案页时弹出成功弹窗；是网页内的侧面板时在网页上提示；原页面已关闭时，支付标签页直接变成方案页。发起位置在点击“开通”时根据消息来源记下（没有 `tabs` 权限时读不到扩展页面标签的 URL），保存在 `storage.session`。30 秒内仍未确认时提示“支付已完成，会员正在开通”；取消支付和退出客户门户时同样回到原页面并提示。
+
+**返回地址为什么不是网页。** 云端 Supabase 为防钓鱼，会把 `*.supabase.co` 上 GET 请求返回的 HTML 改成 `text/plain` 并加 `Content-Security-Policy: sandbox`，网页会原样显示成源代码，中文也因丢失 charset 变成乱码（本地后端没有这个限制，所以只在云端出现）。因此 `billing-return` 只返回一段带 UTF-8 的纯文本兜底，真正的结果由扩展显示：`tabs.onUpdated` 在地址刚变成返回地址时就接管标签页——支付结果回到发起页面，邮箱验证换成扩展内的 `welcome/verified.html`，只把 `#` 后的错误信息转交过去，登录令牌不离开地址栏也不进入扩展页面。以后有了自己的域名，可以把返回页放到官网上。
 
 **已是会员时的升级。** Premium 会员在方案页点“升级到 Premium+”，`billing-checkout` 返回 409（`use_portal`），扩展改为打开客户门户，在门户中切换价格。这样同一用户始终只有一个订阅，门户会按比例计算差价。
 

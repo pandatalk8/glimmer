@@ -271,7 +271,10 @@ async def main():
         await pp.fill('[name=email]', 'alice@example.com')
         await pp.fill('[name=password]', 'wrongpass')
         await pp.locator('.submit').click()
-        await wait_for(lambda: pp.locator('.msg').count())
+        for _ in range(20):  # 页面上可能还留着上一条提示，等内容变成这次的结果
+            if '邮箱或密码错误' in await msg(pp):
+                break
+            await pp.wait_for_timeout(200)
         check('密码错误显示中文提示', '邮箱或密码错误' in await msg(pp), await msg(pp))
         await pp.locator('[data-act=authMode][data-mode=signup]').click()
         await pp.fill('[name=email]', 'alice@example.com')
@@ -337,6 +340,21 @@ async def main():
         await prem.locator('#period [data-interval=year]').click()
         check('切换年付：Premium+ 显示 $69 / 年', '$69' in await prem.locator('.plan.premium_plus .sub').inner_text())
         check('功能对比表与常见问题', await prem.locator('#compare tr').count() > 8 and await prem.locator('.faq details').count() >= 5)
+        # 邮箱验证链接：后端返回页由扩展换成扩展内的结果页（云端会把 supabase.co 上的网页显示成源代码）
+        vt = await ctx.new_page()
+        await vt.goto(f'{BASE}/functions/v1/billing-return?status=verified#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
+        await wait_for(lambda: asyncio.sleep(0, 'welcome/verified.html' in vt.url or None), 8)
+        await vt.wait_for_timeout(300)
+        check('验证链接失效：换成扩展结果页，显示“验证链接已失效”和错误信息',
+              'welcome/verified.html' in vt.url and await vt.locator('#title').inner_text() == '验证链接已失效'
+              and 'expired' in await vt.locator('#detail').inner_text(), vt.url)
+        await vt.goto(f'{BASE}/functions/v1/billing-return?status=verified#access_token=secret-at&refresh_token=secret-rt&type=signup')
+        await wait_for(lambda: asyncio.sleep(0, ('welcome/verified.html' in vt.url and 'error' not in vt.url) or None), 8)
+        await vt.wait_for_timeout(300)
+        check('验证成功：显示“邮箱已验证”，地址里不带登录令牌',
+              await vt.locator('#title').inner_text() == '邮箱已验证' and 'secret' not in vt.url, vt.url)
+        await vt.screenshot(path=f'{OUTPUT}/email-verified.png')
+        await vt.close()
         # 先取消一次支付：支付页关闭，回到方案页并提示“已取消支付”
         await prem.locator('.plan.premium [data-act=buy]').click()
         tab = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'fake-stripe/checkout' in x.url), None)))

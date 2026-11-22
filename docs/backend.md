@@ -41,7 +41,7 @@
 | `supabase/functions/billing-checkout` | 按所选方案（Premium 年付、Premium+ 月付 / 年付）创建 Stripe 订阅支付页，需要登录；已是会员时提示改用客户门户 |
 | `supabase/functions/billing-portal` | 打开 Stripe 客户门户（换方案、改卡、取消、发票），需要登录 |
 | `supabase/functions/stripe-webhook` | 接收 Stripe 事件，验证签名后同步会员状态 |
-| `supabase/functions/billing-return` | 支付完成 / 取消后显示的返回页 |
+| `supabase/functions/billing-return` | 支付完成 / 取消 / 邮箱验证后跳转的返回地址。返回纯文本：云端 Supabase 会把 supabase.co 上 GET 请求返回的网页改成 `text/plain` 并加 `sandbox`（防钓鱼），网页会显示成源代码。扩展检测到这个地址后接管标签页：支付回到发起页面，邮箱验证换成扩展内的 `welcome/verified.html` |
 | `supabase/functions/_shared/billing.ts` | 订阅同步的核心逻辑，有单元测试 |
 | `src/shared/config.js` | 扩展里填写 Supabase 地址和 anon key |
 
