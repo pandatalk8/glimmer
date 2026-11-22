@@ -797,6 +797,17 @@
     if (found.length) enqueue(found);
   });
 
+  // 输入框旁的小标签（如“翻译中…”），位置跟随输入框
+  function inputBadge(el, text) {
+    const root = ensureUI();
+    const b = h('div', { class: 'input-badge' }, esc(text));
+    const r = el.getBoundingClientRect();
+    b.style.top = Math.max(4, r.top + r.height / 2 - 11) + 'px';
+    b.style.left = Math.max(4, Math.min(innerWidth - 90, r.right - 84)) + 'px';
+    root.appendChild(b);
+    return b;
+  }
+
   // ---------- 输入框翻译（连按三次空格） ----------
   // 三个空格可以是半角、全角（中文输入法全角模式）或不换行空格
   const TRIPLE_SPACE = /\S[ \u00a0\u3000]{3}$/;
@@ -813,20 +824,30 @@
       const value = isField ? el.value : el.isContentEditable ? el.innerText : null;
       if (value == null || !TRIPLE_SPACE.test(value.replace(/\n$/, ''))) return;
       const text = value.replace(/\n$/, '').replace(/[ \u00a0\u3000]{3}$/, '');
-      try {
-        toast('正在翻译输入内容…');
-        const [r] = await send('translate', { texts: [text], to: S.inputTranslate.targetLang });
+      const read = () => (isField ? el.value : el.innerText.replace(/\n$/, ''));
+      const write = (v) => {
         if (isField) {
           const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
-          setter.call(el, r);
+          setter.call(el, v);
           el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         } else {
           el.focus();
           document.execCommand('selectAll');
-          document.execCommand('insertText', false, r);
+          document.execCommand('insertText', false, v);
         }
+      };
+      // 翻译要一两秒：先去掉三个空格，并在输入框旁显示“翻译中…”，不要让用户以为只打出了三个空格
+      if (isField) write(text);
+      const badge = inputBadge(el, '翻译中…');
+      try {
+        const [r] = await send('translate', { texts: [text], to: S.inputTranslate.targetLang });
+        // 等待期间用户又改了内容：不覆盖用户刚输入的文字
+        if (read() !== text && read() !== value.replace(/\n$/, '')) return toast('输入内容已变化，没有替换为译文');
+        write(r);
       } catch (err) {
         toast(err.message, 'error');
+      } finally {
+        badge.remove();
       }
     },
     true

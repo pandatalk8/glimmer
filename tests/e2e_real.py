@@ -197,7 +197,13 @@ async def main():
             await page.locator('#box').click()
             await page.keyboard.type('今天天气很好，我们去公园散步吧')
             await page.keyboard.type('   ')
+            # 翻译要一两秒：按下第三个空格后，应立刻去掉空格并在输入框旁显示“翻译中…”
+            snap = await page.evaluate("""()=>({v:document.querySelector('#box').value,
+              badge:document.querySelector('glimmer-ui').shadowRoot.querySelector('.input-badge')?.textContent||''})""")
+            check('三空格后立刻去掉空格并显示“翻译中…”（不会让人以为只打出了三个空格）',
+                  not snap['v'].endswith('   ') and (snap['badge'] == '翻译中…' or all(ord(c) < 128 for c in snap['v'])), snap)
             await page.wait_for_timeout(2500)
+            check('翻译完成后“翻译中…”标签消失', await page.locator('glimmer-ui >> .input-badge').count() == 0)
             v = await page.locator('#box').input_value()
             check('textarea 内容被替换为英文', v and all(ord(c) < 128 for c in v) and len(v) > 5, v)
             await page.locator('#inp').click()
@@ -231,6 +237,14 @@ async def main():
             await page.wait_for_timeout(2500)
             v = await page.locator('#full').input_value()
             check('中文输入法的全角空格也算', v and 'hello' in v.lower(), v)
+            # 翻译期间用户继续打字：不能用译文覆盖用户刚输入的内容
+            await page.locator('#full').fill('')
+            await page.keyboard.type('今晚一起吃饭吗')
+            await page.keyboard.type('   ')
+            await page.keyboard.type('xyz')
+            await page.wait_for_timeout(2500)
+            v = await page.locator('#full').input_value()
+            check('翻译期间继续打字：保留用户输入，不被译文覆盖', v.endswith('xyz') and '今晚' in v, v)
             await sw.evaluate(SET, {'inputTranslate': {'enabled': False, 'targetLang': 'en'}})
             await page.close()
 

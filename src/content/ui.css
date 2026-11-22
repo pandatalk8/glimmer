@@ -402,3 +402,19 @@ button {
 .yt-sub .word:hover {
   background: rgba(139, 92, 246, 0.6);
 }
+
+/* 输入框翻译进行中：贴在输入框右侧 */
+.input-badge {
+  position: fixed;
+  z-index: 2147483647;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--gold, #e9c46a);
+  color: var(--gold, #e9c46a);
+  font-size: 12px;
+  line-height: 20px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
