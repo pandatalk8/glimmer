@@ -19,6 +19,10 @@ gl-trans.gl-block {
   display: block !important;
   margin: 0.3em 0 0.1em !important;
 }
+/* 原文靠换行分段（white-space: pre-line 等）时，译文同样按行显示 */
+gl-trans.gl-pre {
+  white-space: pre-line;
+}
 gl-trans.gl-inline {
   display: inline !important;
   margin-left: 0.45em !important;

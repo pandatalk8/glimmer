@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pre-line comment</title>
+    <style>
+      body { font: 16px/1.6 system-ui, sans-serif; max-width: 760px; margin: 40px auto; }
+      .comment { white-space: pre-line; }
+    </style>
+  </head>
+  <body>
+    <!-- 仿 Product Hunt 评论：一个 white-space: pre-line 的 div，只有一个文字节点，段落之间是空行 -->
+    <div class="comment" id="c">Hello everyone, the extension has been online for a year and has received great support from many users.
+
+📺 YouTube AI Bilingual Subtitles
+
+In cases where videos do not offer subtitles, the app uses AI to create and translate captions from the audio.
+
+🎧 Shadowing Training
+
+With the app, you can practice shadowing sentence by sentence and effectively improve your listening skills.</div>
+    <p id="normal">This ordinary paragraph should still be translated as one block.</p>
+  </body>
+</html>

@@ -117,6 +117,22 @@
   let blockTexts = new WeakMap(); // block → Set<原文>
   let units = []; // 所有翻译单元
 
+  // 靠换行符分段的文字（如 Product Hunt 评论：一个 white-space: pre-line 的 div 里只有一个文字节点，段落间是空行）。
+  // 整段合起来翻译会把换行压成空格、译文挤成一整块；改为按行翻译，再按原来的换行与空行拼回去
+  function keepsLineBreaks(block) {
+    return /^(pre-line|pre-wrap|break-spaces)$/.test(getComputedStyle(block).whiteSpace);
+  }
+  function splitLines(raw) {
+    if (!raw.includes('\n')) return null;
+    const lines = [];
+    for (const l of raw.split('\n')) {
+      const t = l.replace(/\s+/g, ' ').trim();
+      if (t || (lines.length && lines[lines.length - 1])) lines.push(t); // 连续空行合并为一个
+    }
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    return lines.filter(Boolean).length >= 2 ? lines : null;
+  }
+
   // 把一个块元素拆成若干“连续 inline 段”，每段是一个翻译单元
   function unitsOfBlock(block) {
     const result = [];
@@ -152,7 +168,8 @@
       if (fresh && shouldTranslate(text)) {
         if (!seen) blockTexts.set(block, (seen = new Set()));
         seen.add(text);
-        result.push({ block, nodes: run.slice(), text, pure: false });
+        const parts = keepsLineBreaks(block) ? splitLines(textNodes.map((t) => t.nodeValue).join('')) : null;
+        result.push({ block, nodes: run.slice(), text, pure: false, parts });
       }
       run = [];
     };
@@ -204,7 +221,7 @@
     const el = document.createElement('gl-trans');
     const isHeading = /^H[1-6]$/.test(unit.block.tagName);
     const inline = !isHeading && unit.block.tagName !== 'P' && unit.text.length <= 28;
-    el.className = 'gl-trans ' + (inline ? 'gl-inline' : 'gl-block') + ' gl-loading';
+    el.className = 'gl-trans ' + (unit.parts ? 'gl-block gl-pre' : inline ? 'gl-inline' : 'gl-block') + ' gl-loading';
     el.setAttribute('translate', 'no');
     const span = document.createElement('span');
     span.className = 'gl-t';
@@ -270,18 +287,39 @@
     const MAX_ITEMS = 40;
     let batch = [];
     let size = 0;
+    // 按行翻译的单元展开成多条，每条记下属于哪个单元、第几行；全部行到齐后再拼成译文
+    const items = [];
+    for (const u of all) {
+      if (!u.parts) {
+        items.push({ u, i: -1, text: u.text });
+        continue;
+      }
+      u.out = u.parts.slice(); // 不需要翻译的行（如纯符号）保留原样
+      u.left = 0;
+      u.parts.forEach((p, i) => {
+        if (p && shouldTranslate(p)) {
+          u.left++;
+          items.push({ u, i, text: p });
+        }
+      });
+      if (!u.left) fill(u, u.out.join('\n'));
+    }
     const go = (b) => {
       if (!b.length) return;
       const gen = state.gen;
-      send('translate', { texts: b.map((u) => u.text) })
+      send('translate', { texts: b.map((it) => it.text) })
         .then((res) => {
           if (gen !== state.gen) return;
-          b.forEach((u, i) => fill(u, res[i]));
+          b.forEach(({ u, i }, k) => {
+            if (i < 0) return fill(u, res[k]);
+            u.out[i] = res[k];
+            if (--u.left === 0) fill(u, u.out.join('\n'));
+          });
           updateBall();
         })
         .catch((e) => {
           if (gen !== state.gen) return;
-          b.forEach((u) => fail(u, e.message));
+          new Set(b.map((it) => it.u)).forEach((u) => fail(u, e.message));
           if (!errorShown) {
             errorShown = true;
             toast(e.message, 'error');
@@ -289,14 +327,14 @@
           }
         });
     };
-    for (const u of all) {
-      if (batch.length && (size + u.text.length > MAX_CHARS || batch.length >= MAX_ITEMS)) {
+    for (const it of items) {
+      if (batch.length && (size + it.text.length > MAX_CHARS || batch.length >= MAX_ITEMS)) {
         go(batch);
         batch = [];
         size = 0;
       }
-      batch.push(u);
-      size += u.text.length;
+      batch.push(it);
+      size += it.text.length;
     }
     go(batch);
   }

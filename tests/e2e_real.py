@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover yt input popup drawer toolbar webcomp build always import style ctxmenu
+场景：wiki hn mdn hover yt input popup drawer toolbar preline webcomp build always import style ctxmenu
 """
 import asyncio, functools, http.server, json, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -483,6 +483,27 @@ async def main():
             await cp.close()
 
         # ---------- Web Components 网站（如 Reddit）：自定义元素不能被隐藏 ----------
+        if run('preline'):
+            print('\n[preline] 靠换行分段的文字（Product Hunt 评论）')
+            page = await ctx.new_page()
+            await page.goto('http://127.0.0.1:8765/preline.html')
+            await page.wait_for_timeout(800)
+            await sw.evaluate("""async ()=>{const t=(await chrome.tabs.query({})).find(t=>t.url&&t.url.includes('preline'));
+              await chrome.tabs.sendMessage(t.id,{type:'setPage',on:true})}""")
+            await wait_count(page, 2)
+            r = await page.evaluate("""()=>{const g=document.querySelector('#c gl-trans');const t=g?.querySelector('.gl-t')?.textContent||'';
+              return {pre:g?.classList.contains('gl-pre'),ws:g&&getComputedStyle(g).whiteSpace,lines:t.split('\\n'),
+                      normal:document.querySelectorAll('#normal gl-trans.gl-pre').length,
+                      src:document.querySelector('#c').firstChild.nodeType===3&&document.querySelector('#c').childNodes.length}}""")
+            lines = r['lines']
+            check('按行翻译：译文保留原文的 5 段与段间空行', len(lines) == 9 and all(lines[i] for i in (0, 2, 4, 6, 8))
+                  and not any(lines[i] for i in (1, 3, 5, 7)), lines)
+            check('小标题单独成行（📺、🎧 开头）', lines[2].startswith('📺') and lines[6].startswith('🎧'), lines[2][:20])
+            check('译文为中文，且以 pre-line 显示', r['pre'] and r['ws'] == 'pre-line' and all(any('一' <= ch <= '鿿' for ch in lines[i]) for i in (0, 4, 8)))
+            check('不改动原文的文字节点；普通段落仍整段翻译', r['src'] == 2 and r['normal'] == 0, r['src'])
+            await page.screenshot(path=f'{OUTPUT}/preline.png')
+            await page.close()
+
         if run('webcomp'):
             print('\n[webcomp] 隐藏未注册自定义元素的网站')
             page = await ctx.new_page()
