@@ -221,6 +221,8 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 
 ## 八、旅程五：Premium 会员的权益与边界
 
+> 本旅程可在云端一键自动回归：`python3 tests/e2e_cloud_billing.py`（与旅程四一起跑，用 D-09 开通的 Premium 账号）。
+
 前置：D-09 开通 Premium 的账号已登录（或 `premium@review.local`，但不能测 E-09、E-10）。
 
 | 编号 | 场景 | 操作步骤 | 预期结果 | 结果 |
