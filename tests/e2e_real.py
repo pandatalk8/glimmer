@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover yt input popup drawer toolbar freewords selpanel preline webcomp build always import style ctxmenu
+场景：wiki hn mdn hover yt input popup drawer toolbar freewords selpanel preline webcomp build always import style ctxmenu reload
 """
 import asyncio, functools, http.server, json, os, re, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -689,6 +689,35 @@ async def main():
             check('面板弹出并显示译文', len(out.strip()) > 1 and '熟能生巧' in out or any('一' <= c <= '鿿' for c in out), out)
             menus = await sw.evaluate("new Promise(r=>chrome.contextMenus.update('toggle-page',{},()=>r(!chrome.runtime.lastError)))")
             check('右键菜单已注册', menus)
+            await page.close()
+
+        # 放在最后：会让插件重新加载，之后的场景都要用新的后台
+        if run('reload'):
+            print('\n[reload] 在 chrome://extensions 刷新插件后，已打开网页里的侧面板与悬浮球')
+            page = await ctx.new_page()
+            await page.goto(LOCAL)
+            await page.wait_for_timeout(800)
+            await page.locator('glimmer-ui >> .ball').hover()
+            await page.wait_for_timeout(300)
+            await page.locator('glimmer-ui >> [data-act=panel]').click()
+            await page.wait_for_timeout(1500)
+            drawers = "()=>[...document.querySelectorAll('glimmer-ui')].reduce((n,u)=>n+(u.shadowRoot?.querySelectorAll('.drawer').length||0),0)"
+            check('刷新插件前打开侧面板', await page.evaluate(drawers) == 1)
+            try:
+                await sw.evaluate('chrome.runtime.reload()')  # 与在扩展管理页点“刷新”相同：网页里的脚本与插件断开
+            except Exception:
+                pass
+            await asyncio.sleep(3)
+            fr = next((f for f in page.frames if 'panel/panel.html' in f.url), None)
+            await fr.locator('[data-act=close]').first.click()
+            await page.wait_for_timeout(800)
+            check('刷新插件后，侧面板的 ✕ 仍能关掉面板', await page.evaluate(drawers) == 0)
+            await page.locator('glimmer-ui >> .ball').hover()
+            await page.wait_for_timeout(300)
+            await page.locator('glimmer-ui >> [data-act=panel]').click()
+            await page.wait_for_timeout(800)
+            told = await page.evaluate("()=>document.querySelector('glimmer-ui').shadowRoot.textContent.includes('插件已更新，请刷新页面后再使用')")
+            check('网页上留着的旧悬浮球点“面板”：提示“插件已更新，请刷新页面后再使用”，不会没反应', told)
             await page.close()
 
         await ctx.close()

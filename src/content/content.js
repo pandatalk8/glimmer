@@ -19,6 +19,17 @@
     });
   }
   G.send = send;
+  // 在 chrome://extensions 刷新插件后，已打开网页里的这份脚本会与插件断开：chrome.runtime.id 变为空、getURL 报错。
+  // 扩展的地址在启动时记下，断开后仍能认出面板 iframe 发来的“关闭”，不会出现侧面板关不掉
+  const EXT_ORIGIN = 'chrome-extension://' + chrome.runtime.id;
+  const PANEL_URL = chrome.runtime.getURL('panel/panel.html');
+  const alive = () => {
+    try {
+      return !!chrome.runtime?.id;
+    } catch {
+      return false;
+    }
+  };
 
   let S = null; // settings
   let META = null;
@@ -502,9 +513,10 @@
   function openDrawer(view = 'home') {
     const root = ensureUI();
     if (drawer) return;
+    if (!alive()) return toast('插件已更新，请刷新页面后再使用', 'error'); // 网页上留着的是旧脚本，点了要有反应
     drawer = h('div', { class: 'drawer' });
     const f = document.createElement('iframe');
-    f.src = chrome.runtime.getURL('panel/panel.html') + '?mode=drawer&view=' + encodeURIComponent(view);
+    f.src = PANEL_URL + '?mode=drawer&view=' + encodeURIComponent(view);
     f.setAttribute('allow', 'clipboard-write');
     drawer.appendChild(f);
     root.appendChild(drawer);
@@ -525,7 +537,7 @@
   G.toggleDrawer = toggleDrawer;
   // 面板 iframe 通过 postMessage 请求关闭；校验来源必须是本扩展
   window.addEventListener('message', (e) => {
-    if (e.data?.source !== 'glimmer-panel' || e.origin !== 'chrome-extension://' + chrome.runtime.id) return;
+    if (e.data?.source !== 'glimmer-panel' || e.origin !== EXT_ORIGIN) return;
     if (e.data.type === 'close') closeDrawer();
   });
 
