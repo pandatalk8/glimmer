@@ -1,9 +1,9 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover yt input popup drawer toolbar selpanel preline webcomp build always import style ctxmenu
+场景：wiki hn mdn hover yt input popup drawer toolbar freewords selpanel preline webcomp build always import style ctxmenu
 """
-import asyncio, functools, http.server, json, os, sys, tempfile, threading
+import asyncio, functools, http.server, json, os, re, sys, tempfile, threading
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -295,9 +295,14 @@ async def main():
             await page.keyboard.type('今晚一起吃饭吗')
             await page.keyboard.type('   ')
             await page.keyboard.type('xyz')
-            await page.wait_for_timeout(2500)
+            told = False
+            for _ in range(12):  # 提示几秒后消失，边等边看
+                told = told or '输入内容已变化，没有替换为译文' in await page.evaluate(
+                    "()=>document.querySelector('glimmer-ui')?.shadowRoot?.textContent||''")
+                await page.wait_for_timeout(250)
             v = await page.locator('#full').input_value()
             check('翻译期间继续打字：保留用户输入，不被译文覆盖', v.endswith('xyz') and '今晚' in v, v)
+            check('并提示“输入内容已变化，没有替换为译文”', told)
             await sw.evaluate(SET, {'inputTranslate': {'enabled': False, 'targetLang': 'en'}})
             await page.close()
 
@@ -483,6 +488,48 @@ async def main():
             await cp.close()
 
         # ---------- Web Components 网站（如 Reddit）：自定义元素不能被隐藏 ----------
+        if run('freewords'):
+            print('\n[freewords] 免费版收藏生词与生词本页提示（B-10、B-11）')
+            await sw.evaluate("()=>chrome.storage.local.set({words:[{w:'existing',t:'',url:'',ts:Date.now(),m:false,u:Date.now()}]})")
+            pp = await ctx.new_page()
+            await pp.set_viewport_size({'width': 400, 'height': 640})
+            await pp.goto(f'chrome-extension://{eid}/panel/panel.html')
+            await pp.wait_for_timeout(800)
+            count = lambda: pp.evaluate("()=>[...document.querySelectorAll('.stat')].find(b=>b.textContent.includes('生词本'))?.querySelector('b')?.textContent")
+            n0 = await count()
+            page = await ctx.new_page()
+            await page.goto(LOCAL)
+            await page.wait_for_timeout(800)
+            await page.evaluate("""()=>{const p=document.querySelector('p');const w=document.createTreeWalker(p,NodeFilter.SHOW_TEXT).nextNode();
+              const i=w.nodeValue.search(/[A-Za-z]{5,}/);const m=w.nodeValue.slice(i).match(/^[A-Za-z]+/)[0];
+              const r=document.createRange();r.setStart(w,i);r.setEnd(w,i+m.length);const s=getSelection();s.removeAllRanges();s.addRange(r);
+              document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0,clientX:300,clientY:200}));}""")
+            await page.locator('glimmer-ui >> .sel-icon').click()
+            await page.locator('glimmer-ui >> .p-save').click()
+            told = ''
+            for _ in range(12):
+                t = await page.evaluate("()=>document.querySelector('glimmer-ui')?.shadowRoot?.textContent||''")
+                m = re.search(r'已收藏到生词本（共 \d+ 个）', t)
+                if m:
+                    told = m.group(0)
+                    break
+                await page.wait_for_timeout(250)
+            saved = await page.locator('glimmer-ui >> .p-save').inner_text()
+            await pp.reload()
+            await pp.wait_for_timeout(800)
+            n1 = await count()
+            check('B-10 划词面板点“☆ 收藏”：变为“★ 已收藏”，提示“已收藏到生词本（共 2 个）”，面板首页生词本数字加 1',
+                  saved.strip() == '★ 已收藏' and told == '已收藏到生词本（共 2 个）' and n0 == '1' and n1 == '2', f'{saved.strip()} / {told} / {n0} → {n1}')
+            await pp.locator('[data-go=words]').first.click()
+            await pp.wait_for_timeout(600)
+            hint = await pp.locator('.hint').last.inner_text()
+            check('B-11 生词本页显示“免费版最多 100 个，开通 Premium 不限数量并云同步”',
+                  '免费版最多 100 个' in hint and '开通 Premium' in hint and '不限数量并云同步' in hint, hint.strip()[:40])
+            await pp.screenshot(path=f'{OUTPUT}/free-words.png')
+            await page.close()
+            await pp.close()
+            await sw.evaluate("()=>chrome.storage.local.set({words:[]})")
+
         if run('selpanel'):
             print('\n[selpanel] 连续触发两次划词：只留一个面板，点 ✕ 能关掉')
             await sw.evaluate("""()=>chrome.storage.local.get('settings').then(r=>{const s=r.settings||{};

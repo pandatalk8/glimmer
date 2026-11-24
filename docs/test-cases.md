@@ -289,6 +289,8 @@ where user_id = (select id from profiles where email = 'plus@review.local');
 
 ## 十一、安全检查（选做，需懂一点技术）
 
+> 本节可一键自动检查云端：`python3 tests/security_cloud.py`。H-04 的实际返回：不带任何头时由网关返回 401；只带公开 key 时由函数返回 401“请先登录”。
+
 在扩展后台 Console 或终端中执行，验证即使绕过界面，服务端也不会放行。
 
 | 编号 | 检查项 | 方法 | 预期结果 | 结果 |
