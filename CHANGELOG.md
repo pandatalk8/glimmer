@@ -149,6 +149,7 @@
 
 ### 其他
 
+- **开源许可证与仓库拆分**：采用 MIT 许可证（`LICENSE`；名称与图标不随代码授权）；内部文档（计划、成本测算、回归记录、产品构想等）移到 `docs/internal/`，不随开源仓库公开，公开文档不再链接它们；新增 `scripts/export_public.sh`，从私有仓库导出开源仓库（去掉内部文档历史、作者邮箱改为 GitHub noreply 地址，并检查邮箱、内部文档与密钥）；云端测试脚本改为读取 `supabase link` 的项目或环境变量 `GLIMMER_SUPABASE_REF`，不再写死项目
 - **开源准备**（发布计划 4.6）
   - 新增 `CONTRIBUTING.md`（本地运行、测试、提交要求）、`SECURITY.md`（通过 GitHub 私密漏洞报告提交安全问题）、`CODE_OF_CONDUCT.md`（采用 Contributor Covenant 2.1）
   - 新增 `.github/`：问题反馈与功能建议模板、PR 模板，以及 CI（后端单元测试与类型检查、扩展 JS 语法检查、防止误提交密钥、核心回归）

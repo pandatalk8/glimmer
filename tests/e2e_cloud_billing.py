@@ -20,7 +20,18 @@ KEEP = '--keep' in sys.argv
 SKIP_E = '--skip-e' in sys.argv  # 只跑旅程四
 SKIP_F = SKIP_E or '--skip-f' in sys.argv  # 不跑旅程六
 SKIP_G = SKIP_F or '--skip-g' in sys.argv  # 不跑旅程七
-REF = 'btaihodwxgyhtbyjhbke'
+def _linked_ref():
+    """要测试的云端项目：环境变量 GLIMMER_SUPABASE_REF，否则用 `supabase link` 记下的项目（supabase/.temp/project-ref，已被 git 忽略）"""
+    ref = os.environ.get('GLIMMER_SUPABASE_REF', '').strip()
+    path = os.path.join(ROOT, 'supabase', '.temp', 'project-ref')
+    if not ref and os.path.exists(path):
+        ref = open(path, encoding='utf-8').read().strip()
+    if not ref:
+        sys.exit('不知道要测试哪个云端项目：先执行 npx supabase link，或设置环境变量 GLIMMER_SUPABASE_REF')
+    return ref
+
+
+REF = _linked_ref()
 API = f'https://{REF}.supabase.co'
 ARTICLE = 'http://127.0.0.1:8766/article.html'
 results = []
