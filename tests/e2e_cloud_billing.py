@@ -1,13 +1,13 @@
 """旅程四（开通会员）在云端自动回归：云端 Supabase（glimmer）+ Stripe 沙盒，用 Stripe 公布的测试卡走完整的付款流程。
 
-覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+），以及 F-01 ~ F-08（旅程六：用升级后的 Premium+ 账号测大模型、用量与额度）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
+覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+），F-01 ~ F-08（旅程六：用升级后的 Premium+ 账号测大模型、用量与额度），以及 G-01 ~ G-08（旅程七：客户门户取消 / 恢复续费、立即终止后的降级与重新开通）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
 
 - 测试账号用云端管理接口直接创建（已验证邮箱），不发验证邮件，不受内置发信每小时约 2 封的限制
 - 只用 Stripe 测试密钥（sk_test_）与公布的测试卡号，不会产生真实扣款
 - 结束时取消测试订阅、删除 Stripe 测试客户和云端测试账号；加 --keep 保留，方便在 Studio / Stripe 后台查看
 
 前提：已登录 Supabase CLI（npx supabase login），supabase/functions/.env 中有 Stripe 测试密钥与价格。
-用法：python3 tests/e2e_cloud_billing.py [--headed] [--keep] [--skip-e] [--skip-f]
+用法：python3 tests/e2e_cloud_billing.py [--headed] [--keep] [--skip-e] [--skip-f] [--skip-g]
 """
 import asyncio, base64, functools, http.server, json, os, re, secrets, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 from playwright.async_api import async_playwright
@@ -19,6 +19,7 @@ HEADED = '--headed' in sys.argv
 KEEP = '--keep' in sys.argv
 SKIP_E = '--skip-e' in sys.argv  # 只跑旅程四
 SKIP_F = SKIP_E or '--skip-f' in sys.argv  # 不跑旅程六
+SKIP_G = SKIP_F or '--skip-g' in sys.argv  # 不跑旅程七
 REF = 'btaihodwxgyhtbyjhbke'
 API = f'https://{REF}.supabase.co'
 ARTICLE = 'http://127.0.0.1:8766/article.html'
@@ -145,7 +146,7 @@ async def payment_frame(pay, timeout=90):
             if 'elements-inner' not in f.url:
                 continue
             try:
-                if await f.locator('#payment-numberInput, [role=button]:has-text("Card")').count():
+                if await f.locator('#payment-numberInput, :text("Card")').count():
                     return f
             except Exception:
                 pass
@@ -167,8 +168,18 @@ async def fill_card(pay, number):
                 await f.locator(sel).fill(val)
         await f.locator('button[type="submit"], .SubmitButton').first.click()
         return
-    if not await f.locator('#payment-numberInput').is_visible():
-        await f.locator('[role=button]:has-text("Card")').first.click()
+    # 付款方式是折叠列表，先选中“Card”卡号框才会出现；页面结构不时变化，几种写法轮流试，直到卡号框可见
+    for sel in ('[role=button]:has-text("Card")', '.p-AccordionButton:has-text("Card")', 'input[type=radio][value=card]',
+                '[data-value=card]', 'text=Card'):
+        if await f.locator('#payment-numberInput').is_visible():
+            break
+        try:
+            el = f.locator(sel).first
+            if await el.count():
+                await el.click(timeout=5000, force=sel.startswith('input'))
+                await f.locator('#payment-numberInput').wait_for(state='visible', timeout=5000)
+        except Exception:
+            pass
     await f.locator('#payment-numberInput').fill(number, timeout=30000)
     await f.locator('#payment-expiryInput').fill('1234')
     await f.locator('#payment-cvcInput').fill('123')
@@ -231,6 +242,10 @@ async def main():
     try:
         a, b, c = new_user(), new_user(), new_user()
         users += [a, b, c]
+        if not SKIP_G:
+            d = new_user()  # G-08：没有 Stripe 订阅的会员（相当于本地的预置账号）
+            users.append(d)
+            a['extra'] = d
         print(f'创建了 3 个已验证的云端测试账号：{a["email"]}（D-05 ~ D-10）、{b["email"]}（D-09b）、{c["email"]}（D-11）')
         await run(a, b, c)
     finally:
@@ -459,6 +474,8 @@ async def run(a, b, c):
             await journey5(ctx, sw, eid, a, prof.get('stripe_customer_id') or '', panel, account, find_tab)
             if not SKIP_F:
                 await journey6(ctx, sw, eid, a, panel, account)
+                if not SKIP_G:
+                    await journey7(ctx, sw, eid, a, panel, account, find_tab)
 
         # D-09b：点“开通”后关闭方案页，再完成付款
         await sign_in(b)
@@ -736,6 +753,187 @@ async def journey6(ctx, sw, eid, a, panel, account):
     r = await tr(pp, 'deepseek')
     check('F-08 用量恢复后 DeepSeek 重新可用', r.get('ok') and zh(r['data'][0]), (r.get('data') or [r.get('error')])[0])
     await pp.close()
+
+
+async def journey7(ctx, sw, eid, a, panel, account, find_tab):
+    """旅程七（G-01 ~ G-08）：同一个 Premium+ 账号，在客户门户取消 / 恢复续费，立即终止后检查降级，再重新开通"""
+    print('\n[旅程七] 管理订阅、取消与到期')
+    cus = (rest('profiles', f'id=eq.{a["id"]}&select=stripe_customer_id') or [{}])[0].get('stripe_customer_id') or ''
+    active = lambda: stripe_api('GET', f'/subscriptions?customer={cus}&status=active').get('data', [])
+    sub_id = (active() or [{}])[0].get('id', '')
+    tr = lambda pg, eng, text='Good morning, my friend.': pg.evaluate(
+        "(e)=>chrome.runtime.sendMessage({type:'translate',engine:e.eng,texts:[e.text],to:'zh-CN',noCache:true})", {'eng': eng, 'text': text})
+    zh = lambda s: any('\u4e00' <= ch <= '\u9fff' for ch in (s or ''))
+    W = "()=>chrome.storage.local.get('words').then(r=>r.words||[])"
+
+    async def refreshed(pp, pred, timeout=40):
+        async def once():
+            await pp.evaluate("chrome.runtime.sendMessage({type:'accountRefresh'})")
+            acc = await account()
+            return acc if pred(acc) else None
+        return await wait_for(once, timeout)
+
+    async def account_page():
+        pp = await panel('account')
+        await pp.wait_for_timeout(800)
+        return pp
+
+    # G-01：账户页“管理订阅”
+    pp = await account_page()
+    await pp.locator('[data-act=portal]').first.click()
+    portal = await find_tab('billing.stripe.com', 40)
+    ptxt = ''
+    if portal:
+        await portal.wait_for_load_state('domcontentloaded')
+        ptxt = (await wait_for(lambda: _text_has(portal, ['premium+', 'payment method']), 60) or await portal.locator('body').inner_text()).lower()
+        await shot(portal, 'cloud-g01-portal.png')
+    check('G-01 账户页“管理订阅”在新标签页打开 Stripe 客户门户：当前方案、付款方式、发票',
+          portal is not None and 'premium+' in ptxt and 'payment method' in ptxt and 'invoice' in ptxt)
+
+    # G-03：在门户中取消订阅（到期取消）
+    via = '客户门户页面'
+    cancelled = lambda: stripe_api('GET', f'/subscriptions/{sub_id}').get('cancel_at_period_end') is True
+    try:
+        btn = portal.locator('button, a, [role=button]').filter(has_text=re.compile(r'^\s*Cancel (subscription|plan)', re.I)).first
+        await btn.click(timeout=30000)
+        confirm = portal.get_by_role('button', name=re.compile(r'^Cancel (subscription|plan)', re.I)).last
+        await confirm.wait_for(state='visible', timeout=30000)
+        await confirm.click()
+        poll(cancelled, 20)
+    except Exception as e:
+        print('  门户取消订阅失败：', (str(e).splitlines() or [type(e).__name__])[0][:100])
+        await shot(portal, 'cloud-g03-portal.png')
+    if not cancelled():
+        print('  改用 Stripe API 设置到期取消（与门户中“取消订阅”效果相同）')
+        stripe_api('POST', f'/subscriptions/{sub_id}', {'cancel_at_period_end': 'true'})
+        via = 'Stripe API'
+    acc = await refreshed(pp, lambda x: x.get('cancelAtPeriodEnd'))
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    body = await pp.locator('body').inner_text()
+    r = await tr(pp, 'deepseek')
+    check(f'G-03 取消续费（{via}）：显示“已取消续费，Premium+ 有效期至 …”，到期前仍可使用 DeepSeek',
+          acc and '已取消续费，Premium+ 有效期至' in body and r.get('ok') and zh(r['data'][0]), (r.get('data') or [r.get('error')])[0])
+
+    # G-04：在门户中续订
+    via = '客户门户页面'
+    try:
+        await portal.reload()
+        # 门户中的按钮为“Don't cancel subscription”（旧版为“Renew …”），不一定是 button 元素，按文字找可点击的元素
+        btn = portal.locator('button, a, [role=button]').filter(has_text=re.compile(r"Don.t cancel|Renew", re.I)).first
+        await btn.click(timeout=30000)
+        confirm = portal.get_by_role('button', name=re.compile(r'^(Renew|Renew subscription|Renew plan)', re.I)).last
+        try:
+            await confirm.wait_for(state='visible', timeout=10000)
+            await confirm.click()
+        except Exception:
+            pass
+        poll(lambda: not cancelled(), 20)
+    except Exception as e:
+        print('  门户续订失败：', (str(e).splitlines() or [type(e).__name__])[0][:100])
+        await shot(portal, 'cloud-g04-portal.png')
+    if cancelled():
+        print('  改用 Stripe API 恢复续费（与门户中“续订”效果相同）')
+        stripe_api('POST', f'/subscriptions/{sub_id}', {'cancel_at_period_end': 'false'})
+        via = 'Stripe API'
+    acc = await refreshed(pp, lambda x: x.get('plan') == 'premium_plus' and not x.get('cancelAtPeriodEnd'))
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    body = await pp.locator('body').inner_text()
+    check(f'G-04 恢复续费（{via}）：状态恢复为“下次续费：…”', acc and '下次续费：' in body and '已取消续费' not in body)
+    if portal and not portal.is_closed():
+        await portal.close()
+    await pp.close()
+
+    # G-02：方案页当前方案卡片
+    prem = await ctx.new_page()
+    await prem.goto(f'chrome-extension://{eid}/premium/premium.html')
+    await prem.wait_for_selector('#who .email', timeout=15000)
+    await wait_for(lambda: prem.locator('.plan.premium_plus [data-act=portal]').count(), 10)
+    label = (await prem.locator('.plan.premium_plus button').first.inner_text()).strip()
+    await prem.locator('.plan.premium_plus [data-act=portal]').click()
+    portal = await find_tab('billing.stripe.com', 40)
+    check('G-02 方案页当前方案卡片按钮为“当前方案 · 管理订阅”，点击打开客户门户', label == '当前方案 · 管理订阅' and portal is not None, label)
+    for x in (portal, prem):
+        if x and not x.is_closed():
+            await x.close()
+
+    # G-05 ~ G-07：默认引擎为 DeepSeek（旅程六设置的）时立即终止订阅
+    eng_before = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings?.engine)")
+    n_words = len(await sw.evaluate(W))
+    stripe_api('DELETE', f'/subscriptions/{sub_id}')
+    pp = await account_page()
+    acc = await refreshed(pp, lambda x: x.get('plan') == 'free')
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    body = await pp.locator('.plan').inner_text() if await pp.locator('.plan').count() else ''
+    rd, rk = await tr(pp, 'deepl'), await tr(pp, 'deepseek')
+    plan = poll(lambda: (rest('profiles', f'id=eq.{a["id"]}&select=plan') or [{}])[0].get('plan') == 'free' or None, 20)
+    check('G-05 立即终止后变回“免费版”；DeepL、大模型重新被拦；profiles.plan = free',
+          acc and '免费版' in body and plan and not rd.get('ok') and not rk.get('ok')
+          and '需要 Premium' in (rd.get('error') or '') and '需要 Premium+' in (rk.get('error') or ''), (rd.get('error') or '')[:30])
+
+    words = await sw.evaluate(W)
+    r = await pp.evaluate("chrome.runtime.sendMessage({type:'toggleWord',word:'aftermath',trans:'后果',url:'https://example.com'})")
+    after = await sw.evaluate(W)
+    first = words[0]['w'] if words else ''
+    await pp.evaluate("(w)=>chrome.runtime.sendMessage({type:'toggleWord',word:w})", first)
+    await asyncio.sleep(5)
+    row = next((w for w in rest('words', f'user_id=eq.{a["id"]}&select=key,deleted') if w['key'] == first.lower()), None)
+    check('G-06 降级后本地生词保留；超过 100 个不能再收藏；不再同步到云端',
+          len(words) == n_words >= 100 and len(after) == len(words) and 'aftermath' not in {w['w'] for w in after}
+          and '免费版生词本最多 100 个' in str(r) and row is not None and row['deleted'] is False,
+          f'本地 {len(words)} 个，收藏结果：{str(r)[:30]}，云端 {first} 删除={row and row["deleted"]}')
+
+    web = await ctx.new_page()
+    url = ARTICLE.replace('article.html', 'links.html')  # 没翻译过的网页，避免直接用缓存
+    await web.goto(url)
+    await web.wait_for_timeout(800)
+    await sw.evaluate("""async (u)=>{const t=(await chrome.tabs.query({})).find(t=>t.url===u);
+      await chrome.tabs.sendMessage(t.id,{type:'setPage',on:true})}""", url)
+    notice = await wait_for(lambda: _toast_has(web, "()=>document.querySelector('glimmer-ui')?.shadowRoot?.textContent||''",
+                                               'DeepSeek 需要 Premium+ 会员，已改用 Google 翻译'), 20)
+    done = await wait_for(lambda: web.evaluate("()=>[...document.querySelectorAll('gl-trans:not(.gl-loading)')].filter(g=>/[\\u4e00-\\u9fff]/.test(g.textContent)).length"), 30)
+    await web.close()
+    home = await panel()
+    banner = await home.locator('.engine-bar').inner_text() if await home.locator('.engine-bar').count() else ''
+    await home.close()
+    # 重新开通：同一客户用测试卡再订阅 Premium+（与在支付页付款后 Stripe 发出的通知一致）
+    pm = stripe_api('POST', '/payment_methods/pm_card_visa/attach', {'customer': cus})['id']
+    stripe_api('POST', '/subscriptions', {'customer': cus, 'items[0][price]': ENV['STRIPE_PRICE_PLUS_YEARLY'].strip(),
+                                          'default_payment_method': pm, 'metadata[user_id]': a['id']})
+    acc = await refreshed(pp, lambda x: x.get('plan') == 'premium_plus')
+    home = await panel()
+    banner2 = await home.locator('.engine-bar').count()
+    await home.close()
+    eng_after = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings?.engine)")
+    check('G-07 降级后翻译网页自动改用 Google 并提示“DeepSeek 需要 Premium+ 会员，已改用 Google 翻译”，面板首页出现横幅；重新开通后恢复 DeepSeek、横幅消失',
+          eng_before == 'deepseek' and notice and done >= 1 and 'DeepSeek 需要 Premium+ 会员，正在使用 Google 翻译' in banner
+          and acc and banner2 == 0 and eng_after == 'deepseek', f'{done} 段 / 横幅：{banner.strip()[:30]}')
+    await pp.close()
+
+    # G-08：没有 Stripe 订阅的会员点“管理订阅”
+    d = a['extra']
+    admin('PATCH', f'/rest/v1/profiles?id=eq.{d["id"]}', {'plan': 'premium'}, {'Prefer': 'return=minimal'})
+    pp = await panel('account')
+    await pp.evaluate("chrome.runtime.sendMessage({type:'accountSignOut'})")
+    await pp.evaluate("(m)=>chrome.runtime.sendMessage(m)", {'type': 'accountSignIn', 'email': d['email'], 'password': d['pw']})
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    plan_txt = await pp.locator('.plan').inner_text() if await pp.locator('.plan').count() else ''
+    await pp.locator('[data-act=portal]').first.click()
+    msg = await wait_for(lambda: _text_has(pp, ['还没有订阅记录']), 15)
+    portals = [x for x in ctx.pages if 'billing.stripe.com' in x.url]
+    check('G-08 没有 Stripe 订阅的会员（相当于预置账号）点“管理订阅”：提示“还没有订阅记录”', 'Premium 会员' in plan_txt and msg and not portals, plan_txt[:20])
+    await pp.close()
+
+
+async def _text_has(page, words):
+    try:
+        t = await page.locator('body').inner_text()
+    except Exception:
+        return None
+    return t if all(w.lower() in t.lower() for w in words) else None  # 门户的小标题用 CSS 显示为大写
 
 
 async def _usage_ge(account, n):

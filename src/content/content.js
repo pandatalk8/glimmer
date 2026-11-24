@@ -606,6 +606,7 @@
   function closePanel() {
     panel?.remove();
     panel = null;
+    shadow?.querySelectorAll('.panel').forEach((p) => p.remove()); // 兜底：不留下任何划词面板
   }
 
   function pickTarget(text) {
@@ -614,11 +615,17 @@
     return S.targetLang;
   }
 
+  // 每次打开记一个序号：三击选段、双击后再单击等会连续触发两次打开，第一次还在等后台回复时第二次已开始；
+  // 不加区分会叠出两个面板，只有后一个被记住，另一个点 ✕、点空白处、按 Esc 都关不掉
+  let openSeq = 0;
   async function openPanel(text, x, y) {
+    const seq = ++openSeq;
     hideSelUI();
     closePanel();
     const root = ensureUI();
     META = (await send('meta').catch(() => null)) || META; // 每次重新读取，登录或升级后等级标注随之更新
+    if (seq !== openSeq) return; // 已有更新的一次打开，以它为准
+    closePanel();
     const engines = META?.engines || [];
     const RANK = { free: 0, premium: 1, premium_plus: 2 };
     const TIER = { premium: 'Premium', premium_plus: 'Premium+' };
@@ -628,6 +635,7 @@
     let to = pickTarget(text);
 
     panel = h('div', { class: 'panel' });
+    const me = panel; // 之后的回调都只操作这个面板，不受另一次打开影响
     panel.innerHTML = `
       <div class="p-head">
         <div class="p-brand">${LOGO}<span>微光翻译</span></div>
@@ -672,7 +680,7 @@
           out.querySelector('.p-up-go').onclick = openPremium;
           out.querySelector('.p-up-back').onclick = () => {
             engine = 'google';
-            panel.querySelector('.p-engine').value = 'google';
+            me.querySelector('.p-engine').value = 'google';
             run();
           };
         } else out.innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -692,7 +700,11 @@
       engine = e.target.value;
       run();
     });
-    panel.querySelector('.p-x').onclick = closePanel;
+    // me：本次打开的面板（见上方 const me）
+    me.querySelector('.p-x').onclick = () => {
+      me.remove(); // 关闭的是自己这一个面板
+      if (panel === me) panel = null;
+    };
     panel.querySelector('.p-foot').addEventListener('click', (e) => {
       const act = e.target.closest('button')?.dataset.act;
       if (act === 'save') {
@@ -713,12 +725,12 @@
     const head = panel.querySelector('.p-head');
     head.addEventListener('pointerdown', (e) => {
       if (e.target.closest('select,button')) return;
-      const r = panel.getBoundingClientRect();
+      const r = me.getBoundingClientRect();
       const dx = e.clientX - r.left;
       const dy = e.clientY - r.top;
       const move = (ev) => {
-        panel.style.left = ev.clientX - dx + 'px';
-        panel.style.top = ev.clientY - dy + 'px';
+        me.style.left = ev.clientX - dx + 'px';
+        me.style.top = ev.clientY - dy + 'px';
       };
       const up = () => {
         removeEventListener('pointermove', move);

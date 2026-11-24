@@ -1,7 +1,7 @@
 """真实网站与交互功能测试（需要联网，使用 Google 免费引擎）。
 
 用法：python3 tests/e2e_real.py [--headed] [--only 名称,名称]
-场景：wiki hn mdn hover yt input popup drawer toolbar preline webcomp build always import style ctxmenu
+场景：wiki hn mdn hover yt input popup drawer toolbar selpanel preline webcomp build always import style ctxmenu
 """
 import asyncio, functools, http.server, json, os, sys, tempfile, threading
 from playwright.async_api import async_playwright
@@ -483,6 +483,33 @@ async def main():
             await cp.close()
 
         # ---------- Web Components 网站（如 Reddit）：自定义元素不能被隐藏 ----------
+        if run('selpanel'):
+            print('\n[selpanel] 连续触发两次划词：只留一个面板，点 ✕ 能关掉')
+            await sw.evaluate("""()=>chrome.storage.local.get('settings').then(r=>{const s=r.settings||{};
+              s.selection={...(s.selection||{enabled:true}),enabled:true,trigger:'auto'};return chrome.storage.local.set({settings:s})})""")
+            page = await ctx.new_page()
+            await page.goto(LOCAL)
+            await page.wait_for_timeout(800)
+            # 三击选段、后台刚被唤醒时：两次鼠标松开几乎同时触发打开，第一次还在等后台回复
+            await page.evaluate("""()=>{const p=document.querySelector('p');const r=document.createRange();r.selectNodeContents(p);
+              const s=getSelection();s.removeAllRanges();s.addRange(r);
+              const up=()=>document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0,clientX:300,clientY:200}));up();up();}""")
+            await page.wait_for_timeout(1500)
+            count = "()=>document.querySelector('glimmer-ui').shadowRoot.querySelectorAll('.panel').length"
+            n1 = await page.evaluate(count)
+            check('连续两次打开只留一个划词面板', n1 == 1, n1)
+            await page.locator('glimmer-ui >> .panel .p-x').first.click()
+            await page.wait_for_timeout(300)
+            check('点 ✕ 后面板关闭，没有残留', await page.evaluate(count) == 0)
+            await page.evaluate("""()=>{const up=()=>document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0,clientX:300,clientY:200}));up();up();}""")
+            await page.wait_for_timeout(1500)
+            await page.mouse.click(20, 20)
+            await page.wait_for_timeout(300)
+            check('点网页空白处也能关掉', await page.evaluate(count) == 0)
+            await sw.evaluate("""()=>chrome.storage.local.get('settings').then(r=>{const s=r.settings||{};
+              s.selection={...(s.selection||{}),trigger:'icon'};return chrome.storage.local.set({settings:s})})""")
+            await page.close()
+
         if run('preline'):
             print('\n[preline] 靠换行分段的文字（Product Hunt 评论）')
             page = await ctx.new_page()
