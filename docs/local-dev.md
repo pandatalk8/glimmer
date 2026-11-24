@@ -31,7 +31,7 @@
 **第一步，获取代码。** 日常检查我的改动用本地 `dev` 分支：
 
 ```bash
-cd /Users/wanghe/workspace/translator
+cd glimmer   # 克隆下来的仓库目录
 git checkout dev
 git merge --ff-only worktree-immersive-translator   # 拉入最新改动
 ```
@@ -39,7 +39,7 @@ git merge --ff-only worktree-immersive-translator   # 拉入最新改动
 **第二步，加载扩展。**
 
 1. Chrome 打开 `chrome://extensions`，右上角开启“开发者模式”
-2. 点击“加载已解压的扩展程序”，选择 `/Users/wanghe/workspace/translator`（包含 `manifest.json` 的目录）
+2. 点击“加载已解压的扩展程序”，选择克隆下来的仓库目录（包含 `manifest.json` 的目录）
 3. 点击工具栏的拼图图标，把“微光翻译”固定到工具栏
 
 **第三步，试用。** 打开任意英文网页，点击工具栏图标滑出侧面板，打开“翻译此页面”。Google 翻译开箱即用，不需要任何配置。
@@ -112,7 +112,7 @@ flowchart LR
 **第二步，在项目根目录启动：**
 
 ```bash
-cd /Users/wanghe/workspace/translator
+cd glimmer   # 克隆下来的仓库目录
 npx supabase start
 ```
 

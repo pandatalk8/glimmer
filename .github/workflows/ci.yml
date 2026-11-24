@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test --allow-env --allow-net --allow-read supabase/functions/
+      - run: deno check supabase/functions/*/index.ts
+
+  extension:
+    name: 扩展语法检查与核心回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JS 语法检查
+        run: |
+          find src panel options premium welcome -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: 防止误提交密钥
+        run: |
+          ! git ls-files -z | xargs -0 grep -nE 'sk_(test|live)_[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{20,}|GOCSPX-[A-Za-z0-9_-]{20,}' --
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安装 Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: 核心回归
+        run: xvfb-run -a python3 tests/e2e.py
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: tests/output/

@@ -2,6 +2,32 @@
 
 一款 Chrome 沉浸式双语翻译扩展（Manifest V3）。网页段落下方直接插入译文，原文译文对照阅读；支持划词翻译、悬停翻译、输入框翻译、生词本和 YouTube 双语字幕。界面参考 Trancy：深灰底色、右侧图标栏的侧边面板。
 
+*Glimmer is an immersive bilingual translation extension for Chrome: translations appear right below each paragraph, plus selection / hover / input-box translation, a word book and dual-language YouTube subtitles. The UI and docs are in Chinese; issues and pull requests in English are welcome.*
+
+## 快速开始
+
+扩展是原生 JavaScript，**没有构建步骤，也没有依赖**：
+
+1. 克隆本仓库
+2. Chrome 打开 `chrome://extensions`，开启右上角“开发者模式”
+3. 点“加载已解压的扩展程序”，选择仓库根目录（包含 `manifest.json` 的目录）
+
+不需要任何后端就能用：Google 翻译的整页 / 划词 / 悬停 / 输入框翻译、YouTube 双语字幕、生词本（最多 100 个）。
+
+## 自建后端（账户、会员与付费引擎）
+
+账户、会员订阅、云同步与 DeepL / Microsoft / 大模型引擎由 [Supabase](https://supabase.com)（数据库 + Edge Functions）与 [Stripe](https://stripe.com) 提供，代码在 `supabase/`：
+
+1. 按 [后端部署指南](docs/backend.md) 创建 Supabase 项目、执行 `supabase/migrations/`、部署 `supabase/functions/`
+2. 复制 `supabase/functions/.env.example` 为 `supabase/functions/.env`，填写 Stripe 与翻译服务商的 Key（只放在服务器端，绝不写进扩展）；用 `scripts/setup_stripe.py` 创建价格
+3. 在 `src/shared/config.js` 的 `BACKEND` 中填写你的 Supabase 地址与**公开** key（`sb_publishable_…`），数据安全依靠数据库行级安全（RLS）
+
+只想在本机试用账户与付款流程，见 [本地运行指南](docs/local-dev.md)（本地 Supabase + Stripe 测试模式）。
+
+## 参与贡献
+
+欢迎提 Issue 与 Pull Request，请先阅读 [参与贡献](CONTRIBUTING.md)；安全问题请按 [安全策略](SECURITY.md) 私密报告。
+
 ## 文档
 
 | 文档 | 内容 |
@@ -53,7 +79,7 @@
 | OpenAI GPT | 大模型 | Premium+ |
 | Google Gemini | 大模型 | Premium+ |
 | DeepSeek | 大模型 | Premium+ |
-| Anthropic Claude | 大模型 | Premium+（每月 2000 万 Token） |
+| Anthropic Claude | 大模型 | Premium+（每月 1500 万 AI 点数） |
 
 扩展里不填写任何 API Key：Google 由浏览器直接调用，其余引擎由后端的翻译代理调用，服务商 Key 只在后端。大模型翻译会把多个段落打包成一次请求（JSON 数组进、JSON 数组出），解析失败时自动降级为逐段翻译。
 
