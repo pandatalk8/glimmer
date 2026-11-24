@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "微光翻译 Glimmer - 沉浸式双语翻译",
   "short_name": "Glimmer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "沉浸式双语网页翻译、划词翻译、YouTube 双语字幕。支持 Google、Microsoft、DeepL、GPT、Gemini、DeepSeek、Claude 等引擎。",
   "minimum_chrome_version": "111",
   "icons": {
