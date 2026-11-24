@@ -44,7 +44,7 @@ python3 tests/e2e.py --headed   # 弹出浏览器窗口，可以看到每一步
 | `tests/e2e_account.py` | 账户与订阅：注册、登录、错误提示、令牌续期、Premium 方案页、开通 Premium+、升级改走客户门户、管理订阅、开发版后端切换、支付后回到原页面（72 项） | 无（使用模拟的 Supabase 接口） | 约 30 秒 |
 | `deno test … supabase/functions/` | 后端订阅逻辑、Stripe 签名验证、翻译代理的等级与用量检查、批量解析、邮箱域名检查、订阅事件乱序与多条订阅（27 项） | 已安装 Deno | 约 5 秒 |
 | `tests/e2e_local_billing.py` | 真实联调：本地 Supabase + Stripe 测试 / 沙盒，注册、邮箱验证、方案页开通 Premium+、经后端用 DeepSeek / DeepL 真实翻译并记录用量、生词本云同步、到期取消、支付后回到方案页（24 项） | 本地后端已启动（见 [本地运行指南](local-dev.md)） | 约 2 分钟 |
-| `tests/e2e_cloud_billing.py` | 旅程四、五（D-01 ~ D-11、E-01 ~ E-10）在云端 Supabase + Stripe 沙盒上自动回归：方案页、未登录开通、取消支付、卡被拒、开通 Premium 并回到原网页、原方案页关闭、数据库与 Stripe 通知送达、3D 验证开通 Premium+；Premium 的引擎解锁与升级卡、DeepL 真实翻译、生词本不限数量与云同步、在客户门户升级到 Premium+ 不重复订阅（27 项）。测试账号由云端管理接口创建，结束后自动删除（`--keep` 保留，`--skip-e` 只跑旅程四） | 已登录 Supabase CLI，`supabase/functions/.env` 有 Stripe 测试密钥 | 约 5 分钟 |
+| `tests/e2e_cloud_billing.py` | 旅程四、五、六（D-01 ~ D-11、E-01 ~ E-10、F-01 ~ F-08）在云端 Supabase + Stripe 沙盒上自动回归：方案页、未登录开通、取消支付、卡被拒、开通 Premium 并回到原网页、原方案页关闭、数据库与 Stripe 通知送达、3D 验证开通 Premium+；Premium 的引擎解锁与升级卡、DeepL 真实翻译、生词本不限数量与云同步、在客户门户升级到 Premium+ 不重复订阅；Premium+ 的 DeepSeek 真实翻译、用量记录与用量卡、85% 预警、额度用完自动改用 Google（36 项）。测试账号由云端管理接口创建，结束后自动删除（`--keep` 保留，`--skip-e` 只跑旅程四，`--skip-f` 不跑旅程六） | 已登录 Supabase CLI，`supabase/functions/.env` 有 Stripe 测试密钥 | 约 7 分钟 |
 | `tests/e2e_youtube.py` | YouTube 真实字幕（会弹出浏览器窗口） | 网络 | 约 40 秒 |
 
 `e2e_real.py` 支持 `--only wiki,hn` 只跑部分场景，`--headed` 显示浏览器窗口。

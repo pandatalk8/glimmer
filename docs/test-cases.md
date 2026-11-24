@@ -242,6 +242,8 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 
 ## 九、旅程六：Premium+ 会员的权益与额度
 
+> 本旅程可在云端一键自动回归：`python3 tests/e2e_cloud_billing.py`（与旅程四、五一起跑，用 E-09 升级后的 Premium+ 账号；用量由脚本直接改，测完恢复）。手工测 F-06 时注意：已翻译过的段落会直接用本机缓存、不经过后端，不会触发“额度用完”的回退，请换一个没翻过的网页。
+
 前置：`plus@review.local` 或 E-09 升级后的账号已登录。
 
 | 编号 | 场景 | 操作步骤 | 预期结果 | 结果 |

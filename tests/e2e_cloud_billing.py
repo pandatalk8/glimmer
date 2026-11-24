@@ -1,13 +1,13 @@
 """旅程四（开通会员）在云端自动回归：云端 Supabase（glimmer）+ Stripe 沙盒，用 Stripe 公布的测试卡走完整的付款流程。
 
-覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），以及 E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
+覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+），以及 F-01 ~ F-08（旅程六：用升级后的 Premium+ 账号测大模型、用量与额度）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
 
 - 测试账号用云端管理接口直接创建（已验证邮箱），不发验证邮件，不受内置发信每小时约 2 封的限制
 - 只用 Stripe 测试密钥（sk_test_）与公布的测试卡号，不会产生真实扣款
 - 结束时取消测试订阅、删除 Stripe 测试客户和云端测试账号；加 --keep 保留，方便在 Studio / Stripe 后台查看
 
 前提：已登录 Supabase CLI（npx supabase login），supabase/functions/.env 中有 Stripe 测试密钥与价格。
-用法：python3 tests/e2e_cloud_billing.py [--headed] [--keep] [--skip-e]
+用法：python3 tests/e2e_cloud_billing.py [--headed] [--keep] [--skip-e] [--skip-f]
 """
 import asyncio, base64, functools, http.server, json, os, re, secrets, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 from playwright.async_api import async_playwright
@@ -18,6 +18,7 @@ FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 HEADED = '--headed' in sys.argv
 KEEP = '--keep' in sys.argv
 SKIP_E = '--skip-e' in sys.argv  # 只跑旅程四
+SKIP_F = SKIP_E or '--skip-f' in sys.argv  # 不跑旅程六
 REF = 'btaihodwxgyhtbyjhbke'
 API = f'https://{REF}.supabase.co'
 ARTICLE = 'http://127.0.0.1:8766/article.html'
@@ -89,8 +90,8 @@ def _http(url, method='GET', body=None, headers=None, form=False):
     raise RuntimeError(f'网络持续失败：{url.split("?")[0]}')
 
 
-def admin(method, path, body=None):
-    h = {'apikey': SECRET, 'Content-Type': 'application/json'}
+def admin(method, path, body=None, extra=None):
+    h = {'apikey': SECRET, 'Content-Type': 'application/json', **(extra or {})}
     if SECRET.startswith('ey'):  # 旧版 service_role JWT 还需要 Authorization
         h['Authorization'] = 'Bearer ' + SECRET
     return _http(API + path, method, body, h)
@@ -456,6 +457,8 @@ async def run(a, b, c):
 
         if not SKIP_E:
             await journey5(ctx, sw, eid, a, prof.get('stripe_customer_id') or '', panel, account, find_tab)
+            if not SKIP_F:
+                await journey6(ctx, sw, eid, a, panel, account)
 
         # D-09b：点“开通”后关闭方案页，再完成付款
         await sign_in(b)
@@ -625,6 +628,129 @@ async def journey5(ctx, sw, eid, a, cus, panel, account, find_tab):
     for x in (portal, prem, pp):
         if x and not x.is_closed():
             await x.close()
+
+
+async def journey6(ctx, sw, eid, a, panel, account):
+    """旅程六（F-01 ~ F-08）：E-09 升级后的 Premium+ 账号，测全部引擎、DeepSeek 真实翻译、用量记录、预警与额度用完"""
+    print('\n[旅程六] Premium+ 会员的权益与额度')
+    month = time.strftime('%Y-%m', time.gmtime())
+    usage = lambda: (rest('usage_monthly', f'user_id=eq.{a["id"]}&month=eq.{month}&select=tokens,chars,requests') or [{'tokens': 0, 'chars': 0, 'requests': 0}])[0]
+    def set_tokens(n):
+        admin('POST', '/rest/v1/usage_monthly?on_conflict=user_id,month', {'user_id': a['id'], 'month': month, 'tokens': n},
+              {'Prefer': 'resolution=merge-duplicates,return=minimal'})
+    tr = lambda pg, eng, text='Good morning, my friend.': pg.evaluate(
+        "(e)=>chrome.runtime.sendMessage({type:'translate',engine:e.eng,texts:[e.text],to:'zh-CN',noCache:true})", {'eng': eng, 'text': text})
+    zh = lambda s: any('一' <= ch <= '鿿' for ch in (s or ''))
+    toast_js = "()=>document.querySelector('glimmer-ui')?.shadowRoot?.textContent||''"
+
+    async def translate_page(url=ARTICLE):
+        web = await ctx.new_page()
+        await web.goto(url)
+        await web.wait_for_timeout(800)
+        await sw.evaluate("""async (u)=>{const t=(await chrome.tabs.query({})).find(t=>t.url===u);
+          await chrome.tabs.sendMessage(t.id,{type:'setPage',on:true})}""", url)
+        done = await wait_for(lambda: web.evaluate("""()=>{const g=[...document.querySelectorAll('gl-trans')];
+          return g.length && !g.some(x=>x.classList.contains('gl-loading')) ? g.filter(x=>/[\\u4e00-\\u9fff]/.test(x.textContent)).length : 0}"""), 60)
+        errs = await web.evaluate("document.querySelectorAll('gl-trans.gl-error').length")
+        return web, done, errs
+
+    pp = await panel()
+    await pp.locator('[data-pick=engine]').first.click()
+    await pp.wait_for_selector('.opt[data-set=deepseek]')
+    tags = await pp.evaluate("[...document.querySelectorAll('.opt[data-set]')].map(o=>[o.dataset.set,o.querySelector('.tag')?.className||''])")
+    check('F-01 全部 7 个引擎都可选择，没有未解锁的', len(tags) == 7 and not any('need' in t for _, t in tags), tags)
+    await pp.locator('.opt[data-set=deepseek]').click()
+    await pp.wait_for_timeout(500)
+    eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings?.engine)")
+    await pp.close()
+
+    before = usage()
+    web, done, errs = await translate_page()
+    after = poll(lambda: (lambda u: u if u['tokens'] > before['tokens'] else None)(usage()), 20) or usage()
+    reqs = after['requests'] - before['requests']
+    check('F-02 默认引擎切到 DeepSeek，整页翻译译文正常；一屏多段只发少量请求',
+          eng == 'deepseek' and done >= 3 and errs == 0 and 0 < reqs < done, f'{done} 段，{reqs} 次请求，失败 {errs}')
+    await web.close()
+    pp = await panel('account')
+    await pp.locator('[data-act=acctRefresh]').click()
+    acc = await wait_for(lambda: _usage_ge(account, after['tokens']), 15)
+    check('F-03 用量增加：usage_monthly 的 tokens、requests 增加，账户状态中的本月用量同步更新',
+          after['tokens'] > before['tokens'] and reqs > 0 and acc, f"tokens {before['tokens']} → {after['tokens']}")
+
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    card = await pp.locator('.usage').inner_text() if await pp.locator('.usage').count() else ''
+    op = await ctx.new_page()
+    await op.goto(f'chrome-extension://{eid}/options/options.html')
+    await op.wait_for_timeout(1500)
+    opt = await op.locator('body').inner_text()
+    await op.close()
+    check('F-04 账户页用量卡：“本月 AI 用量 … / 20 百万 Token”、进度条、“每月 1 日重置”；完整设置页同样显示本月 AI 用量',
+          '本月 AI 用量' in card and '20 百万 Token' in card and '每月 1 日重置' in card and await pp.locator('.usage .bar').count() == 1
+          and '本月 AI 用量' in opt and '每月 1 日重置' in opt, card.replace('\n', ' ')[:60])
+
+    set_tokens(17_000_000)
+    await pp.locator('[data-act=acctRefresh]').click()
+    await wait_for(lambda: _usage_ge(account, 17_000_000), 15)
+    home = await panel()
+    bar = await home.locator('.usage-bar').inner_text() if await home.locator('.usage-bar').count() else ''
+    await home.close()
+    await pp.reload()
+    await pp.wait_for_timeout(1200)
+    warn = await pp.locator('.usage.warn').count()
+    hint = await pp.locator('.usage .hint').inner_text() if await pp.locator('.usage .hint').count() else ''
+    check('F-04b 用量 85%：面板首页出现“本月 AI 用量已用 85%”，用量卡变金色并提示用完后改用 Google',
+          '本月 AI 用量已用 85%' in bar and warn == 1 and '已用 85%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译' in hint, bar.strip()[:30])
+
+    errs5 = {}
+    for e in ('openai', 'gemini', 'claude'):
+        r = await tr(pp, e)
+        errs5[e] = r.get('error') or ''
+    check('F-05 GPT、Gemini、Claude：等级校验通过，提示“服务端尚未配置 … 的 API Key”',
+          all('服务端尚未配置' in v for v in errs5.values()), {k: v[:24] for k, v in errs5.items()})
+
+    set_tokens(20_000_000)
+    await pp.locator('[data-act=acctRefresh]').click()
+    await wait_for(lambda: _usage_ge(account, 20_000_000), 15)
+    # 换一个没翻译过的网页：F-02 翻过的段落会直接用本机缓存，不经过后端，也就不会触发额度用完的回退
+    web, done, errs = await translate_page(ARTICLE.replace('article.html', 'preline.html'))
+    notice = await wait_for(lambda: _toast_has(web, toast_js, '本月 AI 翻译额度已用完，已改用 Google 翻译'), 10)
+    r = await tr(pp, 'deepseek')
+    home = await panel()
+    bar = await home.locator('.usage-bar').inner_text() if await home.locator('.usage-bar').count() else ''
+    await home.close()
+    check('F-06 额度用完：整页自动改用 Google 并提示“本月 AI 翻译额度已用完，已改用 Google 翻译”；手动用 DeepSeek 提示“20 百万 Token 已用完，下月 1 日恢复”；首页显示额度已用完',
+          done >= 2 and errs == 0 and notice and '本月 AI 翻译额度（20 百万 Token）已用完，下月 1 日恢复' in (r.get('error') or '')
+          and '本月 AI 额度已用完' in bar, f"{done} 段 / 网页提示 {'有' if notice else '无'} / 首页：{bar.strip()[:24]}")
+    await web.close()
+    ok = {}
+    for e in ('deepl', 'google'):
+        r = await tr(pp, e)
+        ok[e] = bool(r.get('ok')) and zh(r['data'][0])
+    check('F-07 额度用完后 DeepL、Google 仍能正常翻译', all(ok.values()), ok)
+
+    # 预置账号在本地用 seed 脚本恢复；云端测试账号把用量改回测试前，并确认大模型恢复可用
+    set_tokens(after['tokens'])
+    await pp.locator('[data-act=acctRefresh]').click()
+    await wait_for(lambda: _usage_le(account, after['tokens']), 15)
+    r = await tr(pp, 'deepseek')
+    check('F-08 用量恢复后 DeepSeek 重新可用', r.get('ok') and zh(r['data'][0]), (r.get('data') or [r.get('error')])[0])
+    await pp.close()
+
+
+async def _usage_ge(account, n):
+    a = await account()
+    return a if (a.get('usage') or {}).get('tokens', 0) >= n else None
+
+
+async def _usage_le(account, n):
+    a = await account()
+    return a if (a.get('usage') or {}).get('tokens', 0) <= n else None
+
+
+async def _toast_has(page, js, text):
+    t = await page.evaluate(js)
+    return text if text in t else None
 
 
 async def _count_ge(sw, W, n):
