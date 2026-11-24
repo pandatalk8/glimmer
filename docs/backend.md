@@ -276,3 +276,62 @@ stripe trigger customer.subscription.updated
 - `translate` 函数从 `profiles.plan` 读取等级，等级不够返回 403（`upgrade`），Premium+ 本月用量超过额度返回 429（`quota`），单次超过 100 段或 2 万字符返回 413
 - `words` 表的 RLS 只允许 `is_member(uid)` 为真的用户读写
 - 生词本 100 个的免费上限在扩展后台（`toggleWord`）执行，属于本地功能限制
+
+## 十、成本测算（2026-11-24，发布计划 2.1）
+
+定价是否赚钱，取决于每个引擎每翻译一段文字要付多少钱。下表价格取自各家官网或官方资料，2026-11-24 核对；**DeepL、Microsoft 的官网价格页未能直接读到，数字来自多个一致的二手来源，上线前需在各自后台再确认一次。**
+
+### 10.1 各引擎单价
+
+| 引擎 | 后端使用的模型 | 计费 | 单价 | 来源 |
+| --- | --- | --- | --- | --- |
+| DeepSeek | `deepseek-chat`（默认） | 按 Token | 现行型号 `deepseek-flash`：输入 $0.30 / 输出 $1.20 每百万 Token（高峰）；非高峰（UTC 01–04、06–10 点之外）半价；缓存命中输入 $0.006 | [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing) |
+| OpenAI | `gpt-4.1-mini` | 按 Token | 输入 $0.40 / 输出 $1.60 每百万 Token | [OpenAI 模型页](https://developers.openai.com/api/docs/models/gpt-4.1-mini) |
+| Gemini | `gemini-2.5-flash` | 按 Token | 输入 $0.30 / 输出 $2.50 每百万 Token | [Google AI 价格页](https://ai.google.dev/gemini-api/docs/pricing) |
+| Claude | `claude-haiku-5-5` | 按 Token | 输入 $0.10 / 输出 $0.50 每百万 Token（单次 10 万 Token 以内） | Anthropic 官方模型价格表 |
+| DeepL | DeepL API Pro | 按字符 | $25 每百万字符，另有每月基础费 $5.49 | [DeepL 计费说明](https://support.deepl.com/hc/en-us/articles/360020685720-Usage-count-and-billing-in-DeepL-API)、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-2fii5e2hmuneo) |
+| Microsoft | Azure Translator S1 | 按字符 | 约 $10 每百万字符；每月前 200 万字符免费（F0 免费层） | [Azure Translator 价格页](https://azure.microsoft.com/en-us/pricing/details/translator/)（S1 价格未显示，取自旧版页面与官方问答） |
+
+> **风险：** 后端默认的 `deepseek-chat` 已不在 DeepSeek 官方价格表中（现行名称为 `deepseek-flash`、`deepseek-v4-pro`），目前仍能调用（2026-11-24 回归通过），但随时可能下线，届时 Premium+ 的默认引擎会全部失败。建议把 `DEEPSEEK_MODEL` 设为 `deepseek-flash`（需决策 D4 时一并确认）。
+
+### 10.2 收入（扣除 Stripe 手续费 2.9% + $0.30 后）
+
+| 方案 | 每用户每月净收入 |
+| --- | --- |
+| Premium（$29 / 年） | $2.32 |
+| Premium+ 月付（$6 / 月） | $5.53 |
+| Premium+ 年付（$69 / 年） | $5.56 |
+
+未计入 Supabase、域名、邮件等固定成本与税费。
+
+### 10.3 Premium+：用满每月 2000 万 Token 的成本
+
+假设翻译时输入（提示词 + 原文）约占 55%、输出（译文）约占 45%。
+
+| 引擎 | 每百万 Token 综合成本 | 用满 2000 万 Token | 月付打平的用量 |
+| --- | --- | --- | --- |
+| Claude Haiku 5.5 | $0.28 | $5.60 | 1970 万 Token |
+| DeepSeek（非高峰） | $0.35 | $7.05 | 1570 万 Token |
+| DeepSeek（高峰） | $0.71 | $14.10 | 780 万 Token |
+| GPT-4.1 mini | $0.94 | $18.80 | 590 万 Token |
+| Gemini 2.5 Flash | $1.29 | $25.80 | 430 万 Token |
+
+**结论：用满额度时，只有 Claude Haiku 大致打平，其余都亏；Gemini 每个重度用户每月亏约 $20。** 大多数用户用不满，但额度是按最贵的引擎开放的。
+
+### 10.4 Premium：DeepL 没有任何上限，是最大的亏损点
+
+| 引擎 | 打平的用量（Premium 每月） | 翻译 100 万字符的成本 |
+| --- | --- | --- |
+| DeepL | 约 9.3 万字符（十几篇英文长文） | $25 |
+| Microsoft | 约 23 万字符 | $10 |
+| 对比：大模型 | — | 约 60 万 Token：Claude Haiku ≈ $0.17、DeepSeek ≈ $0.21–0.42、GPT-4.1 mini ≈ $0.56 |
+
+DeepL、Microsoft 目前只记录字符数、不设上限，Premium+ 用户的 DeepL 也不计入 Token 额度。**按字符计费的机器翻译比大模型贵 25–150 倍**，一个每天翻几篇长文的 Premium 用户每月就可能让我们亏 $10 以上。
+
+### 10.5 建议（供决策 D1、D4 参考）
+
+1. **给 DeepL、Microsoft 设每月字符上限**（发布计划 2.3）：如 Premium 每月 10 万字符、Premium+ 每月 20 万字符，用完后自动改用大模型或 Google，提示方式与“AI 额度用完”一致
+2. **Premium+ 改为按引擎加权的“AI 点数”**（D1 方案 ②）：以 Claude Haiku 为 1 倍，DeepSeek 约 2.5 倍，GPT-4.1 mini 约 3.4 倍，Gemini 约 4.6 倍；每月点数按“用满不亏”设定
+3. **首发引擎（D4）优先选便宜的大模型**：Claude Haiku 5.5、DeepSeek；Gemini 2.5 Flash 输出价格最高，可以晚开
+4. **把 DeepSeek 默认模型改为 `deepseek-flash`**。用户什么时候翻译无法控制，测算时按高峰价更稳妥
+5. 上线后用 `usage_monthly` 的真实数据（字符数、Token 数）每月复核一次，再调整额度
