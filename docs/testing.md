@@ -44,6 +44,7 @@ python3 tests/e2e.py --headed   # 弹出浏览器窗口，可以看到每一步
 | `tests/e2e_account.py` | 账户与订阅：注册、登录、错误提示、令牌续期、Premium 方案页、开通 Premium+、升级改走客户门户、管理订阅、开发版后端切换、支付后回到原页面（72 项） | 无（使用模拟的 Supabase 接口） | 约 30 秒 |
 | `deno test … supabase/functions/` | 后端订阅逻辑、Stripe 签名验证、翻译代理的等级与用量检查、批量解析、邮箱域名检查、订阅事件乱序与多条订阅、AI 点数与字符额度（30 项） | 已安装 Deno | 约 5 秒 |
 | `tests/e2e_local_billing.py` | 真实联调：本地 Supabase + Stripe 测试 / 沙盒，注册、邮箱验证、方案页开通 Premium+、经后端用 DeepSeek / DeepL 真实翻译并记录用量、生词本云同步、到期取消、支付后回到方案页（24 项） | 本地后端已启动（见 [本地运行指南](local-dev.md)） | 约 2 分钟 |
+| `tests/e2e_local_auth.py` | 只能在本地验证的账户用例：重新发送验证邮件（A-05b）、忘记密码（A-10）、后端故障时改用 Google（C-12c），邮件在 Mailpit 中查看（6 项） | 本地后端已启动 | 约 1 分钟 |
 | `tests/e2e_cloud_billing.py` | 旅程四至七（D-01 ~ D-11、E-01 ~ E-10、F-01 ~ F-08、G-01 ~ G-08）在云端 Supabase + Stripe 沙盒上自动回归：方案页、未登录开通、取消支付、卡被拒、开通 Premium 并回到原网页、原方案页关闭、数据库与 Stripe 通知送达、3D 验证开通 Premium+；Premium 的引擎解锁与升级卡、DeepL 真实翻译、生词本不限数量与云同步、在客户门户升级到 Premium+ 不重复订阅；Premium+ 的 DeepSeek 真实翻译、用量记录与用量卡、85% 预警、额度用完自动改用 Google；客户门户取消 / 恢复续费、立即终止后降级与重新开通（44 项）。测试账号由云端管理接口创建，结束后自动删除（`--keep` 保留，`--skip-e` 只跑旅程四，`--skip-f` 不跑旅程六，`--skip-g` 不跑旅程七） | 已登录 Supabase CLI，`supabase/functions/.env` 有 Stripe 测试密钥 | 约 9 分钟 |
 | `tests/security_cloud.py` | 安全检查 H-01 ~ H-06：用临时免费账号的令牌验证不能改会员等级、不能写云端生词与用量、未登录不能用翻译代理、伪造支付通知被拒；插件发布文件与打包 zip 中没有服务端密钥（8 项，测完删除临时账号） | 已登录 Supabase CLI | 约 30 秒 |
 | `tests/e2e_youtube.py` | YouTube 真实字幕（会弹出浏览器窗口） | 网络 | 约 40 秒 |
