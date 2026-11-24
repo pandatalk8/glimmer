@@ -35,7 +35,7 @@ async function showDevBackend() {
 const escA = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const PLAN_LABEL = { free: '免费版', premium: 'Premium 会员', premium_plus: 'Premium+ 会员' };
 const fmtDate = (s) => (s ? new Date(s).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
-const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + ' 百万' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n || 0));
+const fmtTok = (n) => (n >= 1e4 ? +(n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + ' 万' : String(n || 0));
 async function showAccount() {
   const r = await chrome.runtime.sendMessage({ type: 'accountState' }).catch(() => null);
   const st = r?.data || {};
@@ -53,11 +53,14 @@ async function showAccount() {
   const member = a.plan !== 'free';
   const status = !member ? '' : a.cancelAtPeriodEnd ? `已取消续费，有效期至 ${fmtDate(a.periodEnd)}` : a.periodEnd ? `下次续费：${fmtDate(a.periodEnd)}` : '';
   const u = a.usage || {};
-  const pct = Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+  const pct = Math.min(100, Math.round(((u.points || 0) / (u.limit || 15e6)) * 100));
+  const cpct = Math.min(100, Math.round(((u.chars || 0) / (u.charLimit || (a.plan === 'premium_plus' ? 2e5 : 1e5))) * 100));
   box.innerHTML = `<div class="field"><label>${escA(st.email || '')} <span class="hint">${escA(status)}</span></label>
       <span class="plan-tag ${member ? 'on' : ''}" id="acctPlan">${PLAN_LABEL[a.plan]}</span></div>
-    ${a.plan === 'premium_plus' ? `<div class="field"><label>本月 AI 用量 <span class="hint">${fmtTok(u.tokens)} / ${fmtTok(u.limit || 20e6)} Token · 每月 1 日重置</span></label>
+    ${a.plan === 'premium_plus' ? `<div class="field"><label>本月 AI 点数 <span class="hint">${fmtTok(u.points)} / ${fmtTok(u.limit || 15e6)} 点 · 每月 1 日重置</span></label>
       <span class="usage-pct ${pct >= 80 ? 'warn' : ''}">${pct}%</span></div>` : ''}
+    ${member ? `<div class="field"><label>本月 DeepL / Microsoft <span class="hint">${fmtTok(u.chars)} / ${fmtTok(u.charLimit || (a.plan === 'premium_plus' ? 2e5 : 1e5))} 字符 · 用完后自动改用 Google</span></label>
+      <span class="usage-pct ${cpct >= 80 ? 'warn' : ''}">${cpct}%</span></div>` : ''}
     <div class="field"><label>会员</label><div class="btns">
       ${a.plan === 'free' ? '<button class="primary" data-acct="plans">开通会员</button>' : ''}
       ${a.plan === 'premium' ? '<button class="primary" data-acct="plans">升级到 Premium+</button>' : ''}
@@ -116,7 +119,7 @@ const opts = (list) => list.map((l) => `<option value="${l.code}">${l.name}</opt
 $('#targetLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#inputLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#sourceLang').innerHTML = opts(LANGUAGES);
-$('#engineSel').innerHTML = ENGINES.map((e) => `<option value="${e.id}">${e.name}${e.tier === 'free' ? '' : '（' + PLAN_NAME[e.tier] + '）'}</option>`).join('');
+$('#engineSel').innerHTML = ENGINES.map((e) => `<option value="${e.id}" ${e.soon ? 'disabled' : ''}>${e.name}${e.soon ? '（即将开放）' : e.tier === 'free' ? '' : '（' + PLAN_NAME[e.tier] + '）'}</option>`).join('');
 
 // ---------- data-path 双向绑定 ----------
 const getPath = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -182,11 +185,13 @@ function renderEngines() {
   box.innerHTML = ENGINES.map((e) => {
     const ui = ENGINE_UI[e.id];
     const isDefault = S.engine === e.id;
-    const ok = canUse(plan, e.id);
+    const ok = canUse(plan, e.id) && !e.soon;
     const tag = e.tier === 'free' ? '<span class="e-tag free">免费</span>' : `<span class="e-tag ${e.tier === 'premium_plus' ? 'llm' : ''}">${PLAN_NAME[e.tier]}</span>`;
-    const action = ok
-      ? `<button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>`
-      : '<button class="ghost use" data-act="premium">升级解锁</button>';
+    const action = e.soon
+      ? '<button class="ghost use" disabled>即将开放</button>'
+      : ok
+        ? `<button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>`
+        : '<button class="ghost use" data-act="premium">升级解锁</button>';
     return `
       <div class="card engine ${isDefault ? 'default' : ''} ${ok ? '' : 'locked'}" data-id="${e.id}">
         <div class="e-head">
@@ -233,8 +238,9 @@ $('#engineCards').addEventListener('click', async (e) => {
 
 // 默认引擎下拉框：只允许选择已解锁的引擎
 $('#engineSel').addEventListener('change', async (e) => {
-  if (canUse(plan, e.target.value)) return;
-  toast(`该引擎需要 ${PLAN_NAME[ENGINES.find((x) => x.id === e.target.value).tier]} 会员`);
+  const eng = ENGINES.find((x) => x.id === e.target.value);
+  if (canUse(plan, e.target.value) && !eng.soon) return;
+  toast(eng.soon ? `${eng.name} 即将开放` : `该引擎需要 ${PLAN_NAME[eng.tier]} 会员`);
   e.target.value = S.engine;
   e.stopImmediatePropagation();
 }, true);

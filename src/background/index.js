@@ -59,7 +59,7 @@ async function fallbackNotice(sender, engineId, reason) {
   await store.set({ [key]: Date.now() });
   const text =
     reason === 'login' ? `${e.name} 需要登录并开通会员，已改用 Google 翻译`
-    : reason === 'quota' ? '本月 AI 翻译额度已用完，已改用 Google 翻译'
+    : reason === 'quota' ? (e.type === 'llm' ? '本月 AI 点数已用完，已改用 Google 翻译' : '本月 DeepL / Microsoft 翻译额度已用完，已改用 Google 翻译')
     : reason === 'error' ? `${e.name} 暂时无法使用，已改用 Google 翻译`
     : `${e.name} 需要 ${PLAN_NAME[e.tier]} 会员，已改用 Google 翻译`;
   const action = reason === 'login' || reason === 'upgrade' ? '查看会员方案' : null;

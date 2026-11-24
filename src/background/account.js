@@ -349,11 +349,17 @@ export async function refreshAccount() {
   );
   const p = rows?.[0] || {};
   const month = new Date().toISOString().slice(0, 7);
-  const usageRows = await call(`/rest/v1/usage_monthly?month=eq.${month}&select=tokens,chars`, { token }).catch(() => []);
+  const usageRows = await call(`/rest/v1/usage_monthly?month=eq.${month}&select=points,chars`, { token }).catch(() => []);
   const account = {
     email: p.email || auth.user.email,
     plan: ['premium', 'premium_plus'].includes(p.plan) ? p.plan : 'free',
-    usage: { tokens: Number(usageRows?.[0]?.tokens || 0), chars: Number(usageRows?.[0]?.chars || 0), limit: TOKEN_LIMIT, month },
+    usage: {
+      points: Number(usageRows?.[0]?.points || 0),
+      chars: Number(usageRows?.[0]?.chars || 0),
+      limit: POINT_LIMIT,
+      charLimit: CHAR_LIMIT[p.plan] || CHAR_LIMIT.premium,
+      month,
+    },
     status: p.subscription_status || null,
     periodEnd: p.current_period_end || null,
     cancelAtPeriodEnd: !!p.cancel_at_period_end,
@@ -366,7 +372,9 @@ export async function refreshAccount() {
 }
 
 // ---------- 后端翻译 ----------
-const TOKEN_LIMIT = 20_000_000; // Premium+ 每月 Token（与后端 TOKEN_LIMIT_MONTHLY 一致，仅用于显示）
+// 仅用于显示，以后端为准（翻译请求的返回中带有实际额度，会覆盖这里的值）；与 supabase/functions/_shared/translate.ts 保持一致
+const POINT_LIMIT = 15_000_000; // Premium+ 每月 AI 点数
+const CHAR_LIMIT = { premium: 100_000, premium_plus: 200_000 }; // DeepL / Microsoft 每月字符
 const ENGINE_NAME = { deepl: 'DeepL', microsoft: 'Microsoft 翻译', openai: 'OpenAI GPT', gemini: 'Google Gemini', deepseek: 'DeepSeek', claude: 'Claude' };
 const isMember = (plan) => plan === 'premium' || plan === 'premium_plus';
 

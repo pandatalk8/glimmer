@@ -16,7 +16,7 @@ PASSWORD = 'review123'
 ACCOUNTS = [
     ('free@review.local', 'free', None),
     ('premium@review.local', 'premium', None),
-    ('plus@review.local', 'premium_plus', 1_234_567),  # 本月已用 Token，用于查看用量卡片
+    ('plus@review.local', 'premium_plus', 1_234_567),  # 本月已用 AI 点数，用于查看用量卡片
 ]
 WORDS = [('serendipity', '意外发现'), ('ubiquitous', '无处不在的'), ('resilient', '有韧性的')]
 
@@ -52,10 +52,10 @@ for email, plan, tokens in ACCOUNTS:
     })
     call('DELETE', f'/rest/v1/usage_monthly?user_id=eq.{uid}')
     if tokens:
-        call('POST', '/rest/v1/usage_monthly', {'user_id': uid, 'month': month, 'tokens': tokens, 'chars': 0, 'requests': 42})
+        call('POST', '/rest/v1/usage_monthly', {'user_id': uid, 'month': month, 'tokens': tokens, 'points': tokens, 'chars': 0, 'requests': 42})
     call('DELETE', f'/rest/v1/words?user_id=eq.{uid}')
     if member:  # 会员的云端生词本：登录后会同步到插件
         call('POST', '/rest/v1/words', [{'user_id': uid, 'key': w, 'w': w, 't': t, 'url': 'https://example.com',
                                          'ts': now, 'm': False, 'deleted': False, 'updated_at': now} for w, t in WORDS])
-    print(f'  {email:24} 密码 {PASSWORD}  {plan}' + (f'，本月已用 {tokens:,} Token' if tokens else '') + ('，云端生词 3 个' if member else ''))
+    print(f'  {email:24} 密码 {PASSWORD}  {plan}' + (f'，本月已用 {tokens:,} AI 点数' if tokens else '') + ('，云端生词 3 个' if member else ''))
 print('\n注意：这些会员是直接写入数据库的，没有 Stripe 订阅，“管理订阅”会提示找不到订阅；要测试真实付款，请用 free 账号在方案页用测试卡开通。')

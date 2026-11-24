@@ -15,10 +15,10 @@
 | Google 翻译（默认） | 机器翻译 | 免费 | 浏览器直接调用 Google 公开接口 |
 | DeepL | 机器翻译 | Premium | 后端代理 |
 | Microsoft 翻译 | 机器翻译 | Premium | 后端代理（Azure Translator） |
-| OpenAI GPT | 大模型 | Premium+ | 后端代理，计入每月 Token |
-| Google Gemini | 大模型 | Premium+ | 后端代理，计入每月 Token |
-| DeepSeek | 大模型 | Premium+ | 后端代理，计入每月 Token |
-| Anthropic Claude | 大模型 | Premium+ | 后端代理，计入每月 Token |
+| OpenAI GPT | 大模型 | Premium+ | 即将开放（每个 Token 计 3.4 点） |
+| Google Gemini | 大模型 | Premium+ | 即将开放（每个 Token 计 4.6 点） |
+| DeepSeek | 大模型 | Premium+ | 后端代理，每个 Token 计 2.5 点 |
+| Anthropic Claude | 大模型 | Premium+ | 后端代理，每个 Token 计 1 点 |
 
 > Google 接口为非官方免费接口，高频使用时可能被临时限流（返回 429）。遇到这种情况稍等片刻，或切换到会员引擎。
 
@@ -30,11 +30,11 @@
 | --- | --- | --- |
 | 免费版 | $0 | 全部翻译方式、YouTube 双语字幕、Google 翻译、生词本最多 100 个 |
 | Premium | $29 / 年（仅年付） | 免费版全部功能 + 无限生词本、生词本云同步、DeepL、Microsoft 翻译 |
-| Premium+ | $6 / 月，或 $69 / 年 | Premium 全部功能 + GPT、Gemini、DeepSeek、Claude，每月 2000 万 Token |
+| Premium+ | $6 / 月，或 $69 / 年 | Premium 全部功能 + DeepSeek、Claude（GPT、Gemini 即将开放），每月 1500 万 AI 点数；DeepL、Microsoft 合计每月 20 万字符 |
 
 入口：面板首页右上角的“Premium”标签（会员时显示为实心的“Premium / Premium+”），或账户页“查看会员方案”。方案页可切换月付、年付，点击“开通”后在新标签页的 Stripe 页面付款。已经是会员时，升级或切换方案在“管理订阅”（Stripe 客户门户）中完成，避免重复订阅。
 
-**Token 用量：** 大模型按服务商返回的输入 + 输出 Token 计数，每月 1 日（UTC）清零。Premium+ 会员在账户页能看到本月用量进度条；用完后大模型引擎暂停到下月，DeepL、Microsoft、Google 仍可使用。
+**用量与额度：** 大模型按服务商返回的输入 + 输出 Token 计数，再按引擎折算为 AI 点数（Claude 1 倍、DeepSeek 2.5 倍、GPT 3.4 倍、Gemini 4.6 倍），Premium+ 每月 1500 万点；DeepL、Microsoft 按字符计数，Premium 合计每月 10 万字符、Premium+ 20 万字符。每月 1 日（UTC）清零；用完后对应引擎暂停到下月，网页翻译自动改用 Google，其他引擎照常可用。成本依据见 [后端部署指南第十节](backend.md)
 
 服务商的 Key 怎样配置到后端，见 [后端部署指南](backend.md)。
 
@@ -77,7 +77,7 @@
 | 未登录 | 登录页（“欢迎回来”）/ 注册页（“创建账号”） | 使用 Google 登录或注册；邮箱注册（需点击验证邮件）、登录、忘记密码；注册页可选“暂不注册，继续免费使用”直接返回首页 |
 | 免费版 | 邮箱、“免费版”、开通会员卡片 | “查看会员方案”打开 Premium 方案页 |
 | Premium 会员 | 邮箱、金色“Premium 会员”、下次续费日期（已取消续费时显示有效期） | 管理订阅（换方案、改卡、取消、发票）、升级到 Premium+、刷新状态 |
-| Premium+ 会员 | 同上，另有“本月 AI 用量”进度条；用量达到 80% 时进度条变金色，面板首页提示“本月 AI 用量已用 N%” | 管理订阅、刷新状态 |
+| Premium+ 会员 | 同上，另有“本月 AI 点数”进度条；达到 80% 时进度条变金色，面板首页提示“本月 AI 点数已用 N%” | 管理订阅、刷新状态 |
 
 “查看账单与发票”只对有过订阅的用户显示。
 

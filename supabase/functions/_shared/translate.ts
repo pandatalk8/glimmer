@@ -11,31 +11,65 @@ export const ENGINE_TIER: Record<string, 'premium' | 'premium_plus'> = {
   claude: 'premium_plus',
 };
 export const LLM_ENGINES = new Set(['openai', 'gemini', 'deepseek', 'claude']);
-export const DEFAULT_TOKEN_LIMIT = 20_000_000; // Premium+ 每月 Token 上限
+export const MT_ENGINES = new Set(['deepl', 'microsoft']);
 export const MAX_TEXTS = 100; // 单次请求上限，防止滥用
 export const MAX_CHARS = 20_000;
+
+// ---------- AI 点数与字符额度（成本测算见 docs/backend.md 第十节） ----------
+// 1 点 = Claude Haiku 的 1 个 Token；其他模型按成本折算，贵的模型一个 Token 算多点。
+// 每月点数按“用满也不亏”设定：任何引擎用满的成本约 $4.2，低于 Premium+ 每月净收入 $5.5
+export const ENGINE_WEIGHT: Record<string, number> = { claude: 1, deepseek: 2.5, openai: 3.4, gemini: 4.6 };
+export const DEFAULT_POINT_LIMIT = 15_000_000; // Premium+ 每月 AI 点数
+// DeepL（$25 / 百万字符）、Microsoft（约 $10 / 百万字符）合计的每月字符上限，用完后扩展自动改用 Google
+export const DEFAULT_CHAR_LIMIT: Record<'premium' | 'premium_plus', number> = { premium: 100_000, premium_plus: 200_000 };
+// 首发暂不开放的引擎（决策 D4）：成本最高、或尚未配置 Key；可用环境变量 DISABLED_ENGINES 调整
+export const DEFAULT_DISABLED_ENGINES = ['openai', 'gemini'];
+export const ENGINE_NAME: Record<string, string> = {
+  deepl: 'DeepL', microsoft: 'Microsoft 翻译', openai: 'OpenAI GPT', gemini: 'Google Gemini', deepseek: 'DeepSeek', claude: 'Claude',
+};
+
+/** 本次大模型调用消耗的 AI 点数 */
+export const pointsFor = (engine: string, tokens: number) => Math.ceil(tokens * (ENGINE_WEIGHT[engine] ?? 1));
+
+/** “1500 万”“10 万”这样的中文数量 */
+export function cnNum(n: number) {
+  if (n >= 1e8) return `${+(n / 1e8).toFixed(1)} 亿`;
+  if (n >= 1e4) return `${+(n / 1e4).toFixed(1)} 万`;
+  return String(n);
+}
 
 const RANK: Record<Plan, number> = { free: 0, premium: 1, premium_plus: 2 };
 
 export interface AccessError {
   status: number;
-  code: 'unknown_engine' | 'upgrade' | 'quota' | 'too_large';
+  code: 'unknown_engine' | 'upgrade' | 'quota' | 'too_large' | 'unavailable';
   error: string;
   requiredPlan?: string;
 }
 
+export interface Usage {
+  points: number;
+  chars: number;
+}
+export interface Limits {
+  points: number; // Premium+ 每月 AI 点数
+  chars: number; // 当前等级的每月 DeepL / Microsoft 字符上限
+  disabled?: Set<string>;
+}
+
 const PLAN_NAME: Record<string, string> = { premium: 'Premium', premium_plus: 'Premium+' };
 
+/** 当前等级的每月字符上限 */
+export const charLimitFor = (plan: Plan, limits: Partial<Record<'premium' | 'premium_plus', number>> = {}) =>
+  plan === 'premium_plus' ? limits.premium_plus ?? DEFAULT_CHAR_LIMIT.premium_plus : limits.premium ?? DEFAULT_CHAR_LIMIT.premium;
+
 /** 检查能否使用该引擎；返回 null 表示允许 */
-export function checkAccess(
-  plan: Plan,
-  engine: string,
-  usedTokens: number,
-  limit: number,
-  texts: string[] = []
-): AccessError | null {
+export function checkAccess(plan: Plan, engine: string, used: Usage, limits: Limits, texts: string[] = []): AccessError | null {
   const tier = ENGINE_TIER[engine];
   if (!tier) return { status: 400, code: 'unknown_engine', error: '不支持的翻译引擎：' + engine };
+  if (limits.disabled?.has(engine)) {
+    return { status: 503, code: 'unavailable', error: `${ENGINE_NAME[engine] || engine} 即将开放，暂时请使用其他翻译引擎` };
+  }
   if (RANK[plan] < RANK[tier]) {
     return {
       status: 403,
@@ -44,8 +78,11 @@ export function checkAccess(
       error: `该翻译引擎需要 ${PLAN_NAME[tier]} 会员，请升级后使用`,
     };
   }
-  if (LLM_ENGINES.has(engine) && usedTokens >= limit) {
-    return { status: 429, code: 'quota', error: `本月 AI 翻译额度（${(limit / 1e6).toFixed(0)} 百万 Token）已用完，下月 1 日恢复` };
+  if (LLM_ENGINES.has(engine) && used.points >= limits.points) {
+    return { status: 429, code: 'quota', error: `本月 AI 点数（${cnNum(limits.points)}点）已用完，下月 1 日恢复` };
+  }
+  if (MT_ENGINES.has(engine) && used.chars >= limits.chars) {
+    return { status: 429, code: 'quota', error: `本月 DeepL / Microsoft 翻译额度（${cnNum(limits.chars)}字符）已用完，下月 1 日恢复` };
   }
   const chars = texts.reduce((n, t) => n + String(t).length, 0);
   if (texts.length > MAX_TEXTS || chars > MAX_CHARS) {
@@ -206,7 +243,7 @@ export function chatFor(engine: string): Chat {
   if (engine === 'openai')
     return openaiCompatible('https://api.openai.com/v1', key('OPENAI_API_KEY', 'OpenAI'), Deno.env.get('OPENAI_MODEL') || 'gpt-4.1-mini', 'OpenAI');
   if (engine === 'deepseek')
-    return openaiCompatible('https://api.deepseek.com', key('DEEPSEEK_API_KEY', 'DeepSeek'), Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-chat', 'DeepSeek');
+    return openaiCompatible('https://api.deepseek.com', key('DEEPSEEK_API_KEY', 'DeepSeek'), Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-flash', 'DeepSeek');
   if (engine === 'gemini') {
     const apiKey = key('GEMINI_API_KEY', 'Gemini');
     const model = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';

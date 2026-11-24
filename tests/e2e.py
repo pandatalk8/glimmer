@@ -35,7 +35,7 @@ class MockBackend(http.server.BaseHTTPRequestHandler):
         if self.headers.get('Authorization') != 'Bearer test-token':
             code, out = 401, {'error': '请先登录', 'code': 'login'}
         else:
-            code, out = 200, {'translations': ['【译】' + t for t in body['texts']], 'usage': {'tokens': 1234, 'limit': 20000000, 'month': '2026-11'}}
+            code, out = 200, {'translations': ['【译】' + t for t in body['texts']], 'usage': {'points': 1234, 'chars': 0, 'limit': 15000000, 'charLimit': 200000, 'month': '2026-11'}}
         data = json.dumps(out, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
@@ -214,7 +214,7 @@ async def main():
         await sw.evaluate("""(o)=>chrome.storage.local.set(o)""", {
             'backendOverride': {'supabaseUrl': 'http://127.0.0.1:8766', 'supabaseAnonKey': 'anon-test'},
             'auth': {'access_token': 'test-token', 'refresh_token': 'r', 'expires_at': int(_t.time()) + 3600, 'user': {'id': 'u1', 'email': 'a@b.c'}},
-            'account': {'email': 'a@b.c', 'plan': 'premium_plus', 'usage': {'tokens': 0, 'limit': 20000000}},
+            'account': {'email': 'a@b.c', 'plan': 'premium_plus', 'usage': {'points': 0, 'chars': 0, 'limit': 15000000, 'charLimit': 200000}},
         })
         await sw.evaluate(SET, {'engine': 'deepseek'})
         await page.reload()
@@ -226,21 +226,21 @@ async def main():
         check('全部段落使用后端返回的译文', all(t.startswith('【译】') for t in texts), f'{len(texts)} 段')
         check('11 段只发 1 次后端请求，并带登录令牌', len(LLM_CALLS) == 1 and LLM_CALLS[0]['auth'] == 'Bearer test-token'
               and LLM_CALLS[0]['engine'] == 'deepseek' and LLM_CALLS[0]['path'] == '/functions/v1/translate', LLM_CALLS)
-        used = await sw.evaluate("chrome.storage.local.get('account').then(r=>r.account.usage.tokens)")
-        check('返回的本月用量写入账户状态', used == 1234, used)
+        used = await sw.evaluate("chrome.storage.local.get('account').then(r=>r.account.usage.points)")
+        check('返回的本月 AI 点数写入账户状态', used == 1234, used)
         # Premium+ 用量超过 80%：面板首页提醒，账户页用量卡变色
         await sw.evaluate("""async()=>{const {account}=await chrome.storage.local.get('account');
-          await chrome.storage.local.set({account:{...account,usage:{...account.usage,tokens:17000000,limit:20000000}}})}""")
+          await chrome.storage.local.set({account:{...account,usage:{...account.usage,points:12750000,limit:15000000}}})}""")
         pn = await ctx.new_page()
         await pn.set_viewport_size({'width': 400, 'height': 640})
         await pn.goto(f'chrome-extension://{eid}/panel/panel.html?view=home')
         await pn.wait_for_timeout(500)
         ub = await pn.locator('.usage-bar').inner_text() if await pn.locator('.usage-bar').count() else ''
-        check('用量 85%：面板首页提示“本月 AI 用量已用 85%”', '本月 AI 用量已用 85%' in ub, ub)
+        check('AI 点数用了 85%：面板首页提示“本月 AI 点数已用 85%”', '本月 AI 点数已用 85%' in ub, ub)
         await pn.locator('.usage-bar').click()
         await pn.wait_for_timeout(300)
         hint = await pn.locator('.usage.warn .hint').inner_text() if await pn.locator('.usage.warn').count() else ''
-        check('点击进入账户页：用量卡变为金色并说明用完后的影响', '用完后大模型会暂停到下月 1 日' in hint, hint)
+        check('点击进入账户页：AI 点数卡变为金色并说明用完后的影响', '用完后大模型会暂停到下月 1 日' in hint, hint)
         await pn.screenshot(path=f'{OUTPUT}/usage-warn.png')
         await pn.close()
 

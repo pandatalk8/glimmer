@@ -78,12 +78,12 @@ const isMember = () => plan() !== 'free';
 const USAGE_WARN = 80; // Premium+ 本月用量达到这个百分比时提醒
 const usagePct = () => {
   const u = acct.account?.usage || {};
-  return Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+  return Math.min(100, Math.round(((u.points || 0) / (u.limit || 15e6)) * 100));
 };
 // 升级提示卡：点到需要会员的功能时，在面板内说明需要的等级、价格和权益
 const OFFER = {
-  premium: { price: '$29 / 年', perks: ['DeepL、Microsoft 专业翻译', '生词本不限数量', '生词本云同步，换设备不丢'] },
-  premium_plus: { price: '$6 / 月 或 $69 / 年', perks: ['包含 Premium 全部功能', 'GPT、Gemini、DeepSeek、Claude 四家大模型', '每月 2000 万 Token'] },
+  premium: { price: '$29 / 年', perks: ['DeepL、Microsoft 专业翻译（每月 10 万字符）', '生词本不限数量', '生词本云同步，换设备不丢'] },
+  premium_plus: { price: '$6 / 月 或 $69 / 年', perks: ['包含 Premium 全部功能', 'DeepSeek、Claude 大模型（GPT、Gemini 即将开放）', '每月 1500 万 AI 点数'] },
 };
 function showUpsell(e) {
   document.querySelector('.upsell')?.remove();
@@ -208,14 +208,20 @@ const PICKERS = {
       ENGINES.map((e) => [
         e.id,
         e.name,
-        e.tier === 'free'
-          ? '<span class="tag free">免费</span>'
-          : `<span class="tag ${canUse(plan(), e.id) ? 'pro' : 'need'}">${PLAN_NAME[e.tier]}</span>`,
+        e.soon
+          ? '<span class="tag soon">即将开放</span>'
+          : e.tier === 'free'
+            ? '<span class="tag free">免费</span>'
+            : `<span class="tag ${canUse(plan(), e.id) ? 'pro' : 'need'}">${PLAN_NAME[e.tier]}</span>`,
         e.tier === 'free' ? '浏览器直接翻译' : e.type === 'llm' ? '大模型 · 由微光翻译服务器提供' : '由微光翻译服务器提供',
       ]),
     footer: '<button class="link" data-act="premium">查看会员方案 ' + IC.chev + '</button>',
     // 未解锁的引擎不切换：先在面板内说明需要什么，用户点“查看会员方案”才打开方案页
     guard: (v) => {
+      if (engineOf(v)?.soon) {
+        toast(`${engineOf(v).name} 即将开放，暂时请使用其他引擎`);
+        return false;
+      }
       if (canUse(plan(), v) && (v === 'google' || acct.loggedIn)) return true;
       showUpsell(engineOf(v));
       return false;
@@ -368,7 +374,7 @@ const VIEWS = {
     const up = plan() === 'premium_plus' ? usagePct() : 0;
     const usageBar =
       up >= USAGE_WARN
-        ? `<button class="usage-bar" data-go="account">${up >= 100 ? '本月 AI 额度已用完，大模型暂停到下月 1 日' : `本月 AI 用量已用 ${up}%`} ${IC.chev}</button>`
+        ? `<button class="usage-bar" data-go="account">${up >= 100 ? '本月 AI 点数已用完，大模型暂停到下月 1 日' : `本月 AI 点数已用 ${up}%`} ${IC.chev}</button>`
         : '';
     return `${header()}
     <div class="body">
@@ -503,17 +509,22 @@ const VIEWS = {
     else if (a.status === 'canceled') status = '订阅已结束';
     const initial = esc((acct.email || '?').trim()[0].toUpperCase());
     const u = a.usage || {};
-    const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + ' 百万' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : String(n || 0));
-    const pct = Math.min(100, Math.round(((u.tokens || 0) / (u.limit || 20e6)) * 100));
+    const fmt = (n) => (n >= 1e4 ? +(n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + ' 万' : String(n || 0));
+    const pct = Math.min(100, Math.round(((u.points || 0) / (u.limit || 15e6)) * 100));
+    const cpct = Math.min(100, Math.round(((u.chars || 0) / (u.charLimit || (plan() === 'premium_plus' ? 2e5 : 1e5))) * 100));
     const usageHint =
-      pct >= 100 ? '本月额度已用完：大模型暂停到下月 1 日，期间网页翻译自动改用 Google；DeepL、Microsoft 照常可用'
+      pct >= 100 ? '本月 AI 点数已用完：大模型暂停到下月 1 日，期间网页翻译自动改用 Google；DeepL、Microsoft 照常可用'
       : pct >= USAGE_WARN ? `已用 ${pct}%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译`
       : '每月 1 日重置；用完后可继续使用 Google、DeepL、Microsoft';
     const usageCard =
-      plan() === 'premium_plus'
-        ? `<div class="card box usage ${pct >= USAGE_WARN ? 'warn' : ''}"><div class="line"><span class="t">本月 AI 用量</span><span class="s">${fmt(u.tokens)} / ${fmt(u.limit || 20e6)} Token</span></div>
+      (plan() === 'premium_plus'
+        ? `<div class="card box usage ${pct >= USAGE_WARN ? 'warn' : ''}"><div class="line"><span class="t">本月 AI 点数</span><span class="s">${fmt(u.points)} / ${fmt(u.limit || 15e6)} 点</span></div>
            <div class="bar"><i style="width:${pct}%"></i></div><div class="hint">${usageHint}</div></div>`
-        : '';
+        : '') +
+      (member
+        ? `<div class="card box usage chars ${cpct >= USAGE_WARN ? 'warn' : ''}"><div class="line"><span class="t">本月 DeepL / Microsoft</span><span class="s">${fmt(u.chars)} / ${fmt(u.charLimit || (plan() === 'premium_plus' ? 2e5 : 1e5))} 字符</span></div>
+           <div class="bar"><i style="width:${cpct}%"></i></div><div class="hint">${cpct >= 100 ? '本月额度已用完：DeepL、Microsoft 暂停到下月 1 日，期间网页翻译自动改用 Google' : '每月 1 日重置；用完后自动改用 Google 翻译'}</div></div>`
+        : '');
 
     return `${header('账户')}
     <div class="body">

@@ -226,7 +226,7 @@ flowchart LR
   F --> C{"checkAccess<br/>等级 · 本月用量 · 大小"}
   C -- "通过" --> P["DeepL · Azure<br/>大模型"]
   C -- "403 upgrade · 429 quota · 413" --> X["中文错误提示"]
-  P --> U["add_usage 累加<br/>Token · 字符 · 请求数"]
+  P --> U["add_usage_points 累加<br/>Token · AI 点数 · 字符 · 请求数"]
 ```
 
 两条路径实现同一个契约：输入 `string[]`、输出等长同序的 `string[]`。服务商之间的差异封装在各自的实现里：
@@ -398,7 +398,7 @@ sequenceDiagram
 
 **订阅到等级的映射：** 先看订阅状态：`active`、`trialing`、`past_due`（续费扣款失败的宽限期，界面提示更新支付方式）为有效，其余（`canceled`、`unpaid`、`incomplete` 等）为免费版。有效时再看价格 ID：`STRIPE_PRICE_PREMIUM_YEARLY` 为 Premium，两个 Premium+ 价格为 Premium+；未知价格按 Premium+ 处理，避免付费用户拿不到权益。用户设置“到期取消”时，到期前保持原等级。
 
-**用量计数：** `usage_monthly` 以（用户、UTC 月份）为主键，`add_usage` 用一条 `insert … on conflict do update` 原子累加 Token、字符数和请求数，并发请求不会丢计数。超额检查在调用服务商之前做，所以单次请求最多超出额度一批的量。
+**用量计数：** `usage_monthly` 以（用户、UTC 月份）为主键，`add_usage` 用一条 `insert … on conflict do update` 原子累加 Token、AI 点数、字符数和请求数（`add_usage_points`），并发请求不会丢计数。超额检查在调用服务商之前做，所以单次请求最多超出额度一批的量。
 
 **可靠性：** Stripe 可能重复或乱序投递事件。每个事件 ID 先写入 `stripe_events`，主键冲突即视为已处理；同步时总是以订阅对象的当前状态为准（`checkout.session.completed` 会重新获取订阅），而不是累加变化，因此乱序也能得到正确结果。处理失败返回 500，让 Stripe 稍后重试。
 
@@ -590,8 +590,8 @@ erDiagram
 | 支付界面 | Stripe Checkout 与客户门户（跳转） | 在面板内嵌入支付表单 | 不接触银行卡信息，免去 PCI 合规；退款、发票、换卡由 Stripe 提供 |
 | Microsoft 引擎 | Azure 官方 API（后端） | Edge 免费鉴权接口 | 后者已下线（返回 404），且属非官方用法 |
 | 付费引擎的 Key | 全部放在后端，扩展经翻译代理调用 | 用户在设置页自填 Key | 用户无需申请 Key；等级与用量可在服务端校验；Key 不会随导出文件泄露 |
-| 会员分档 | 免费 / Premium（机器翻译与云同步）/ Premium+（大模型 + 每月 Token） | 单一 Pro | 大模型成本远高于机器翻译，分档让价格与成本对应 |
-| 用量单位 | 服务商返回的 Token 数 | 按字符或请求次数 | 与大模型成本直接对应；DeepL、Microsoft 不计 Token，只记字符 |
+| 会员分档 | 免费 / Premium（机器翻译与云同步）/ Premium+（大模型 + 每月 AI 点数） | 单一 Pro | 分档让价格与成本对应 |
+| 用量单位 | 大模型：服务商返回的 Token 数按引擎成本折算为 AI 点数；DeepL、Microsoft：字符数 | 所有引擎统一按 Token 或请求次数 | 各家每 Token 价格相差 4–5 倍、机器翻译按字符计费且比大模型贵 25–150 倍；按成本折算才能保证“用满不亏”（测算见 backend.md 第十节） |
 
 ---
 
@@ -617,7 +617,7 @@ erDiagram
 
 - **扩展里没有服务商 Key。** DeepL、Azure 和大模型的 Key 只在 Supabase 函数环境变量中；扩展只持有可公开的 publishable key 和用户自己的登录令牌
 - **翻译内容只转发不保存。** Google 翻译的文本由浏览器直接发给 Google；会员引擎的文本经后端 `translate` 函数转发给服务商，后端只记录字符数和 Token 数，不记录原文和译文
-- **滥用防护。** 翻译代理要求登录，按等级校验引擎，Premium+ 有每月 Token 上限，单次请求最多 100 段 / 2 万字符
+- **滥用防护。** 翻译代理要求登录，按等级校验引擎，Premium+ 有每月 AI 点数上限，DeepL / Microsoft 有每月字符上限，单次请求最多 100 段 / 2 万字符
 - **支付信息不经过我们。** 银行卡在 Stripe 的页面上填写，扩展和后端都接触不到；webhook 用 Stripe 签名验证，伪造的通知会被拒绝
 - **密钥分级。** 扩展里只有可公开的 Supabase publishable key（旧称 anon key，数据安全靠 RLS）；secret / service_role key、Stripe 密钥、Google OAuth 密钥只存在 Supabase 的函数环境变量或被 git 忽略的 `.env` 中，提交前扫描
 - **数据库最小权限。** 所有表开启 RLS；用户只能读自己的 `profiles`、`subscriptions`、`usage_monthly`，没有写权限；`words` 只有会员能读写自己的行；`stripe_events` 对用户完全不可见；`add_usage` 只授权给 service role
@@ -656,7 +656,7 @@ erDiagram
 | 无流式输出 | 大模型长段落需等待完整返回 | 单段翻译改用 SSE 流式，边生成边显示 |
 | 仅支持 YouTube | 其他视频网站无双语字幕 | 抽象“字幕源”接口，按站点实现拦截与解析 |
 | 依赖非官方 Google 接口 | 可能被限流或变更 | 后端增加 Google Cloud Translation 官方 API |
-| 用量超额有一批的误差 | 额度检查在调用前，最后一批可能略超 2000 万 | 按请求预估 Token 预扣，返回后多退少补 |
+| 用量超额有一批的误差 | 额度检查在调用前，最后一批可能略超上限（AI 点数或字符） | 按请求预估用量预扣，返回后多退少补 |
 | 会员状态是本地缓存 | 在 Stripe 后台直接操作订阅后，要等下次打开面板才更新 | 后台定时（如每 6 小时）刷新；需要服务端资源的会员功能始终以服务端校验为准 |
 | 免费版生词本只在本机 | 免费用户换电脑或重装扩展会丢失 | 降级为免费版后保留云端数据，重新开通后恢复 |
 | 邮件依赖 Supabase 自带服务 | 只发给项目成员，每小时几封；其他用户注册收不到验证邮件 | 云端接入自有 SMTP（如 Resend） |

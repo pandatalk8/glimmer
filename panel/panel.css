@@ -360,6 +360,11 @@ html[data-mode='drawer'] .main {
   border-color: rgba(233, 196, 106, 0.4);
   color: var(--gold);
 }
+/* 首发暂不开放的引擎 */
+.tag.soon {
+  border-color: var(--line, rgba(255, 255, 255, 0.15));
+  color: var(--muted, #8a8a99);
+}
 
 /* ---------- 选项列表 ---------- */
 .opts {

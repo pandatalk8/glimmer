@@ -40,6 +40,7 @@ const PLANS = [
       ['DeepL 专业翻译', '欧洲语言翻译质量出色'],
       ['Microsoft 翻译'],
     ],
+    note: 'DeepL 与 Microsoft 合计每月 10 万字符，用完后自动改用 Google 翻译，下月 1 日恢复。',
   },
   {
     id: 'premium_plus',
@@ -47,13 +48,12 @@ const PLANS = [
     badge: '最多人购买',
     section: 'Premium 功能 + 高级 AI 引擎',
     features: [
-      ['Premium 全部功能'],
-      ['OpenAI GPT'],
-      ['Google Gemini'],
+      ['Premium 全部功能', 'DeepL 与 Microsoft 每月 20 万字符'],
       ['DeepSeek'],
       ['Anthropic Claude'],
+      ['OpenAI GPT、Google Gemini', '即将开放'],
     ],
-    note: '每月可用 2000 万 Token，满足日常阅读、学习与工作中的高质量翻译需求。',
+    note: '每月 1500 万 AI 点数，满足日常阅读、学习与工作中的高质量翻译需求。不同模型消耗点数不同（Claude 1 倍、DeepSeek 2.5 倍）。',
   },
 ];
 
@@ -67,9 +67,9 @@ const COMPARE = [
   ['生词本云同步', '—', '✓', '✓'],
   ['翻译引擎'],
   ['Google 翻译', '✓', '✓', '✓'],
-  ['DeepL', '—', '✓', '✓'],
-  ['Microsoft 翻译', '—', '✓', '✓'],
-  ['OpenAI GPT、Google Gemini、DeepSeek、Anthropic Claude', '—', '—', '2000 万 Token / 月'],
+  ['DeepL、Microsoft 翻译', '—', '10 万字符 / 月', '20 万字符 / 月'],
+  ['DeepSeek、Anthropic Claude', '—', '—', '1500 万 AI 点数 / 月'],
+  ['OpenAI GPT、Google Gemini', '—', '—', '即将开放'],
 ];
 
 const RANK = { free: 0, premium: 1, premium_plus: 2 };
@@ -231,8 +231,8 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 
 // ---------- 支付结果：后台在支付完成后切回本页，并写入 billingResult ----------
 const UNLOCKED = {
-  premium: ['生词本不限数量，自动云同步', 'DeepL 专业翻译', 'Microsoft 翻译'],
-  premium_plus: ['生词本不限数量，自动云同步', 'DeepL、Microsoft 专业翻译', 'GPT、Gemini、DeepSeek、Claude 四家大模型', '每月 2000 万 Token'],
+  premium: ['生词本不限数量，自动云同步', 'DeepL 专业翻译（每月 10 万字符）', 'Microsoft 翻译'],
+  premium_plus: ['生词本不限数量，自动云同步', 'DeepL、Microsoft 专业翻译（每月 20 万字符）', 'DeepSeek、Claude 大模型（GPT、Gemini 即将开放）', '每月 1500 万 AI 点数'],
 };
 const RESULT_TEXT = {
   pending: '支付已完成，会员正在开通，稍后会自动生效',

@@ -441,8 +441,10 @@ async def main():
         check('Premium 页面：Premium+ 标为当前方案，Premium 已包含', await prem.locator('.plan.premium_plus.current').count() == 1
               and '已包含' in await prem.locator('.plan.premium .btn').inner_text())
         pp = await open_panel('account')
-        check('账户页显示 Premium+ 会员、续费日期与 AI 用量', 'Premium+ 会员' in await pp.locator('.plan').inner_text()
-              and '下次续费' in await pp.locator('.status-line').inner_text() and await pp.locator('.usage .bar').count() == 1)
+        ub = await pp.locator('.body').inner_text()
+        check('账户页显示 Premium+ 会员、续费日期、AI 点数与 DeepL / Microsoft 字符用量', 'Premium+ 会员' in await pp.locator('.plan').inner_text()
+              and '下次续费' in await pp.locator('.status-line').inner_text() and await pp.locator('.usage .bar').count() == 2
+              and '本月 AI 点数' in ub and '1500 万 点' in ub and '本月 DeepL / Microsoft' in ub and '20 万 字符' in ub)
         await pp.screenshot(path=f'{OUTPUT}/account-pro.png')
         await pp.locator('[data-act=portal]').first.click()
         portal = await wait_for(lambda: asyncio.sleep(0, next((x for x in ctx.pages if 'fake-stripe/portal' in x.url), None)))
@@ -476,8 +478,8 @@ async def main():
         await op.goto(f'chrome-extension://{eid}/options/options.html#account')
         await op.wait_for_selector('#acctPlan', timeout=5000)
         box = await op.locator('#acctBox').inner_text()
-        check('完整设置页“账户与会员”：Premium+ 会员、续费信息、本月 AI 用量、管理订阅',
-              'Premium+ 会员' in box and '本月 AI 用量' in box and '管理订阅' in box and '升级到 Premium+' not in box, box.replace('\n', ' / '))
+        check('完整设置页“账户与会员”：Premium+ 会员、续费信息、本月 AI 点数与字符额度、管理订阅',
+              'Premium+ 会员' in box and '本月 AI 点数' in box and '本月 DeepL / Microsoft' in box and '管理订阅' in box and '升级到 Premium+' not in box, box.replace('\n', ' / '))
         await op.screenshot(path=f'{OUTPUT}/options-account.png')
         await op.locator('[data-acct=logout]').click()
         await op.wait_for_selector('[data-acct=login]', timeout=5000)

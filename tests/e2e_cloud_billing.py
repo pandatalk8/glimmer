@@ -1,6 +1,6 @@
 """旅程四（开通会员）在云端自动回归：云端 Supabase（glimmer）+ Stripe 沙盒，用 Stripe 公布的测试卡走完整的付款流程。
 
-覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+），F-01 ~ F-08（旅程六：用升级后的 Premium+ 账号测大模型、用量与额度），以及 G-01 ~ G-08（旅程七：客户门户取消 / 恢复续费、立即终止后的降级与重新开通）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
+覆盖 docs/test-cases.md 的 D-01 ~ D-11（旅程四），E-01 ~ E-10（旅程五：用 D-09 开通的 Premium 账号测权益，并经客户门户升级到 Premium+），F-01 ~ F-08（旅程六：用升级后的 Premium+ 账号测大模型、AI 点数与 DeepL / Microsoft 字符额度），以及 G-01 ~ G-08（旅程七：客户门户取消 / 恢复续费、立即终止后的降级与重新开通）。云端的 Stripe 通知直接发到云端函数，不需要 stripe listen。
 
 - 测试账号用云端管理接口直接创建（已验证邮箱），不发验证邮件，不受内置发信每小时约 2 封的限制
 - 只用 Stripe 测试密钥（sk_test_）与公布的测试卡号，不会产生真实扣款
@@ -546,8 +546,8 @@ async def journey5(ctx, sw, eid, a, cus, panel, account, find_tab):
     await pp.wait_for_selector('.opt[data-set=deepl]')
     tag = lambda e: pp.locator(f'.opt[data-set={e}] .tag').get_attribute('class')
     t = {e: await tag(e) for e in ('deepl', 'microsoft', 'deepseek', 'openai')}
-    check('E-01 引擎列表：DeepL、Microsoft 可选（已解锁），大模型仍标 Premium+ 未解锁',
-          all('pro' in t[e] for e in ('deepl', 'microsoft')) and all('need' in t[e] for e in ('deepseek', 'openai')), t)
+    check('E-01 引擎列表：DeepL、Microsoft 可选（已解锁），DeepSeek 仍标 Premium+ 未解锁，GPT 标“即将开放”',
+          all('pro' in t[e] for e in ('deepl', 'microsoft')) and 'need' in t['deepseek'] and 'soon' in t['openai'], t)
     await pp.locator('.opt[data-set=deepseek]').click()
     up = await wait_for(lambda: pp.locator('.upsell').count(), 5)
     txt = await pp.locator('.upsell').inner_text() if up else ''
@@ -651,9 +651,9 @@ async def journey6(ctx, sw, eid, a, panel, account):
     """旅程六（F-01 ~ F-08）：E-09 升级后的 Premium+ 账号，测全部引擎、DeepSeek 真实翻译、用量记录、预警与额度用完"""
     print('\n[旅程六] Premium+ 会员的权益与额度')
     month = time.strftime('%Y-%m', time.gmtime())
-    usage = lambda: (rest('usage_monthly', f'user_id=eq.{a["id"]}&month=eq.{month}&select=tokens,chars,requests') or [{'tokens': 0, 'chars': 0, 'requests': 0}])[0]
-    def set_tokens(n):
-        admin('POST', '/rest/v1/usage_monthly?on_conflict=user_id,month', {'user_id': a['id'], 'month': month, 'tokens': n},
+    usage = lambda: (rest('usage_monthly', f'user_id=eq.{a["id"]}&month=eq.{month}&select=tokens,points,chars,requests') or [{'tokens': 0, 'points': 0, 'chars': 0, 'requests': 0}])[0]
+    def set_usage(**kw):  # 直接改云端测试账号的本月用量（points：AI 点数；chars：DeepL / Microsoft 字符）
+        admin('POST', '/rest/v1/usage_monthly?on_conflict=user_id,month', {'user_id': a['id'], 'month': month, **kw},
               {'Prefer': 'resolution=merge-duplicates,return=minimal'})
     tr = lambda pg, eng, text='Good morning, my friend.': pg.evaluate(
         "(e)=>chrome.runtime.sendMessage({type:'translate',engine:e.eng,texts:[e.text],to:'zh-CN',noCache:true})", {'eng': eng, 'text': text})
@@ -675,7 +675,10 @@ async def journey6(ctx, sw, eid, a, panel, account):
     await pp.locator('[data-pick=engine]').first.click()
     await pp.wait_for_selector('.opt[data-set=deepseek]')
     tags = await pp.evaluate("[...document.querySelectorAll('.opt[data-set]')].map(o=>[o.dataset.set,o.querySelector('.tag')?.className||''])")
-    check('F-01 全部 7 个引擎都可选择，没有未解锁的', len(tags) == 7 and not any('need' in t for _, t in tags), tags)
+    tg = dict(tags)
+    check('F-01 首发引擎全部可用：Google、DeepL、Microsoft、DeepSeek、Claude 可选，GPT、Gemini 标“即将开放”，没有未解锁的',
+          len(tags) == 7 and not any('need' in t for _, t in tags) and all('pro' in tg[e] for e in ('deepl', 'microsoft', 'deepseek', 'claude'))
+          and all('soon' in tg[e] for e in ('openai', 'gemini')), tags)
     await pp.locator('.opt[data-set=deepseek]').click()
     await pp.wait_for_timeout(500)
     eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings?.engine)")
@@ -683,75 +686,92 @@ async def journey6(ctx, sw, eid, a, panel, account):
 
     before = usage()
     web, done, errs = await translate_page()
-    after = poll(lambda: (lambda u: u if u['tokens'] > before['tokens'] else None)(usage()), 20) or usage()
+    after = poll(lambda: (lambda u: u if u['points'] > before['points'] else None)(usage()), 20) or usage()
     reqs = after['requests'] - before['requests']
     check('F-02 默认引擎切到 DeepSeek，整页翻译译文正常；一屏多段只发少量请求',
           eng == 'deepseek' and done >= 3 and errs == 0 and 0 < reqs < done, f'{done} 段，{reqs} 次请求，失败 {errs}')
     await web.close()
     pp = await panel('account')
     await pp.locator('[data-act=acctRefresh]').click()
-    acc = await wait_for(lambda: _usage_ge(account, after['tokens']), 15)
-    check('F-03 用量增加：usage_monthly 的 tokens、requests 增加，账户状态中的本月用量同步更新',
-          after['tokens'] > before['tokens'] and reqs > 0 and acc, f"tokens {before['tokens']} → {after['tokens']}")
+    acc = await wait_for(lambda: _usage_ge(account, after['points']), 15)
+    dt, dp = after['tokens'] - before['tokens'], after['points'] - before['points']
+    check('F-03 用量增加：DeepSeek 每个 Token 记 2.5 点（tokens、points、requests 都增加），账户状态中的本月 AI 点数同步更新',
+          dt > 0 and dp >= dt * 2.5 and dp <= dt * 2.5 + 5 and reqs > 0 and acc, f'Token +{dt}，点数 +{dp}')
 
     await pp.reload()
     await pp.wait_for_timeout(1200)
-    card = await pp.locator('.usage').inner_text() if await pp.locator('.usage').count() else ''
+    card = await pp.locator('.usage:not(.chars)').inner_text() if await pp.locator('.usage:not(.chars)').count() else ''
     op = await ctx.new_page()
     await op.goto(f'chrome-extension://{eid}/options/options.html')
     await op.wait_for_timeout(1500)
     opt = await op.locator('body').inner_text()
     await op.close()
-    check('F-04 账户页用量卡：“本月 AI 用量 … / 20 百万 Token”、进度条、“每月 1 日重置”；完整设置页同样显示本月 AI 用量',
-          '本月 AI 用量' in card and '20 百万 Token' in card and '每月 1 日重置' in card and await pp.locator('.usage .bar').count() == 1
-          and '本月 AI 用量' in opt and '每月 1 日重置' in opt, card.replace('\n', ' ')[:60])
+    check('F-04 账户页：“本月 AI 点数 … / 1500 万 点”与“本月 DeepL / Microsoft … / 20 万 字符”两张用量卡、进度条、“每月 1 日重置”；完整设置页同样显示',
+          '本月 AI 点数' in card and '1500 万 点' in card and '每月 1 日重置' in card and await pp.locator('.usage .bar').count() == 2
+          and '本月 DeepL / Microsoft' in await pp.locator('.usage.chars').inner_text()
+          and '本月 AI 点数' in opt and '本月 DeepL / Microsoft' in opt, card.replace('\n', ' ')[:60])
 
-    set_tokens(17_000_000)
+    set_usage(points=12_750_000)
     await pp.locator('[data-act=acctRefresh]').click()
-    await wait_for(lambda: _usage_ge(account, 17_000_000), 15)
+    await wait_for(lambda: _usage_ge(account, 12_750_000), 15)
     home = await panel()
     bar = await home.locator('.usage-bar').inner_text() if await home.locator('.usage-bar').count() else ''
     await home.close()
     await pp.reload()
     await pp.wait_for_timeout(1200)
-    warn = await pp.locator('.usage.warn').count()
-    hint = await pp.locator('.usage .hint').inner_text() if await pp.locator('.usage .hint').count() else ''
-    check('F-04b 用量 85%：面板首页出现“本月 AI 用量已用 85%”，用量卡变金色并提示用完后改用 Google',
-          '本月 AI 用量已用 85%' in bar and warn == 1 and '已用 85%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译' in hint, bar.strip()[:30])
+    warn = await pp.locator('.usage.warn:not(.chars)').count()
+    hint = await pp.locator('.usage:not(.chars) .hint').inner_text() if await pp.locator('.usage:not(.chars) .hint').count() else ''
+    check('F-04b AI 点数用了 85%：面板首页出现“本月 AI 点数已用 85%”，点数卡变金色并提示用完后改用 Google',
+          '本月 AI 点数已用 85%' in bar and warn == 1 and '已用 85%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译' in hint, bar.strip()[:30])
 
     errs5 = {}
     for e in ('openai', 'gemini', 'claude'):
         r = await tr(pp, e)
         errs5[e] = r.get('error') or ''
-    check('F-05 GPT、Gemini、Claude：等级校验通过，提示“服务端尚未配置 … 的 API Key”',
-          all('服务端尚未配置' in v for v in errs5.values()), {k: v[:24] for k, v in errs5.items()})
+    check('F-05 GPT、Gemini 提示“即将开放，暂时请使用其他翻译引擎”；Claude 等级校验通过，提示“服务端尚未配置 Claude 的 API Key”',
+          all('即将开放' in errs5[e] for e in ('openai', 'gemini')) and '服务端尚未配置 Claude' in errs5['claude'], {k: v[:24] for k, v in errs5.items()})
 
-    set_tokens(20_000_000)
+    set_usage(points=15_000_000)
     await pp.locator('[data-act=acctRefresh]').click()
-    await wait_for(lambda: _usage_ge(account, 20_000_000), 15)
+    await wait_for(lambda: _usage_ge(account, 15_000_000), 15)
     # 换一个没翻译过的网页：F-02 翻过的段落会直接用本机缓存，不经过后端，也就不会触发额度用完的回退
     web, done, errs = await translate_page(ARTICLE.replace('article.html', 'preline.html'))
-    notice = await wait_for(lambda: _toast_has(web, toast_js, '本月 AI 翻译额度已用完，已改用 Google 翻译'), 10)
+    notice = await wait_for(lambda: _toast_has(web, toast_js, '本月 AI 点数已用完，已改用 Google 翻译'), 10)
     r = await tr(pp, 'deepseek')
     home = await panel()
     bar = await home.locator('.usage-bar').inner_text() if await home.locator('.usage-bar').count() else ''
     await home.close()
-    check('F-06 额度用完：整页自动改用 Google 并提示“本月 AI 翻译额度已用完，已改用 Google 翻译”；手动用 DeepSeek 提示“20 百万 Token 已用完，下月 1 日恢复”；首页显示额度已用完',
-          done >= 2 and errs == 0 and notice and '本月 AI 翻译额度（20 百万 Token）已用完，下月 1 日恢复' in (r.get('error') or '')
-          and '本月 AI 额度已用完' in bar, f"{done} 段 / 网页提示 {'有' if notice else '无'} / 首页：{bar.strip()[:24]}")
+    check('F-06 AI 点数用完：整页自动改用 Google 并提示“本月 AI 点数已用完，已改用 Google 翻译”；手动用 DeepSeek 提示“本月 AI 点数（1500 万点）已用完，下月 1 日恢复”；首页显示点数已用完',
+          done >= 2 and errs == 0 and notice and '本月 AI 点数（1500 万点）已用完，下月 1 日恢复' in (r.get('error') or '')
+          and '本月 AI 点数已用完' in bar, f"{done} 段 / 网页提示 {'有' if notice else '无'} / 首页：{bar.strip()[:24]}")
     await web.close()
     ok = {}
     for e in ('deepl', 'google'):
         r = await tr(pp, e)
         ok[e] = bool(r.get('ok')) and zh(r['data'][0])
-    check('F-07 额度用完后 DeepL、Google 仍能正常翻译', all(ok.values()), ok)
+    check('F-07 AI 点数用完后 DeepL、Google 仍能正常翻译', all(ok.values()), ok)
+
+    # F-06b：DeepL / Microsoft 字符额度（Premium+ 每月 20 万字符）用完
+    set_usage(chars=200_000)
+    r = await tr(pp, 'deepl')
+    rm = await tr(pp, 'microsoft')
+    await pp.reload()
+    await pp.wait_for_timeout(500)
+    await pp.locator('[data-act=acctRefresh]').click()
+    await pp.wait_for_timeout(1500)
+    chars_card = await pp.locator('.usage.chars').inner_text() if await pp.locator('.usage.chars').count() else ''
+    rk = await tr(pp, 'claude')
+    check('F-06b DeepL / Microsoft 字符额度用完：两者都提示“本月 DeepL / Microsoft 翻译额度（20 万字符）已用完，下月 1 日恢复”，账户页字符卡显示已用完；大模型不受影响',
+          '本月 DeepL / Microsoft 翻译额度（20 万字符）已用完，下月 1 日恢复' in (r.get('error') or '') and '额度（20 万字符）已用完' in (rm.get('error') or '')
+          and '本月额度已用完' in chars_card and 'DeepL / Microsoft' not in (rk.get('error') or ''), (r.get('error') or '')[:40])  # 此时 AI 点数仍是 F-06 设的“用完”，Claude 只要不是被字符额度拦下即可
+    set_usage(chars=0)
 
     # 预置账号在本地用 seed 脚本恢复；云端测试账号把用量改回测试前，并确认大模型恢复可用
-    set_tokens(after['tokens'])
+    set_usage(points=after['points'])
     await pp.locator('[data-act=acctRefresh]').click()
-    await wait_for(lambda: _usage_le(account, after['tokens']), 15)
+    await wait_for(lambda: _usage_le(account, after['points']), 15)
     r = await tr(pp, 'deepseek')
-    check('F-08 用量恢复后 DeepSeek 重新可用', r.get('ok') and zh(r['data'][0]), (r.get('data') or [r.get('error')])[0])
+    check('F-08 AI 点数恢复后 DeepSeek 重新可用', r.get('ok') and zh(r['data'][0]), (r.get('data') or [r.get('error')])[0])
     await pp.close()
 
 
@@ -938,12 +958,12 @@ async def _text_has(page, words):
 
 async def _usage_ge(account, n):
     a = await account()
-    return a if (a.get('usage') or {}).get('tokens', 0) >= n else None
+    return a if (a.get('usage') or {}).get('points', 0) >= n else None
 
 
 async def _usage_le(account, n):
     a = await account()
-    return a if (a.get('usage') or {}).get('tokens', 0) <= n else None
+    return a if (a.get('usage') or {}).get('points', 0) <= n else None
 
 
 async def _toast_has(page, js, text):

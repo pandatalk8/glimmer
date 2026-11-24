@@ -41,6 +41,12 @@
 
 ### 改进
 
+- **会员额度改为“AI 点数 + 字符额度”，保证用满也不亏**（决策 D1、D4，发布计划 2.2、2.3；成本测算见 `docs/backend.md` 第十节）
+  - Premium+：每月 2000 万 Token 改为每月 **1500 万 AI 点数**。不同模型价格不同，按成本折算：Claude 每个 Token 记 1 点、DeepSeek 2.5 点（GPT 3.4 点、Gemini 4.6 点）。账户页、完整设置页、面板首页提醒、方案页与升级卡的文案同步改为“AI 点数”
+  - DeepL、Microsoft：原来不限量，现在两者合计每月 **Premium 10 万字符、Premium+ 20 万字符**；用完后网页翻译自动改用 Google，提示“本月 DeepL / Microsoft 翻译额度已用完，已改用 Google 翻译”，下月 1 日恢复。会员的账户页与完整设置页新增“本月 DeepL / Microsoft”用量卡
+  - 首发引擎：Google、DeepL、Microsoft、DeepSeek、Claude；**GPT、Gemini 暂标“即将开放”**，面板、划词面板、完整设置页都不能选择，后端返回“… 即将开放，暂时请使用其他翻译引擎”
+  - DeepSeek 默认模型由 `deepseek-chat`（已不在官方价格表中）改为 `deepseek-flash`
+  - 后端：新增迁移 `…_ai_points_char_limits.sql`（`usage_monthly.points` 与 `add_usage_points`，旧用量按 1 倍折算）；三个额度与暂不开放的引擎都可用环境变量调整（`POINT_LIMIT_MONTHLY`、`CHAR_LIMIT_PREMIUM`、`CHAR_LIMIT_PLUS`、`DISABLED_ENGINES`），插件显示的上限以后端返回为准。已部署到云端
 - **靠换行分段的文字，译文也保持分段**：Product Hunt 评论这类内容只有一整段文字、段落之间靠空行分隔，之前翻译时把换行压成空格，译文挤成一整块放在最后。现在按行翻译，再按原来的换行与空行排好，小标题、段落与原文一一对应。只在原文的样式会保留换行（`white-space: pre-line` 等）时生效，不改动网页自己的文字
 - **YouTube 双语字幕始终显示原文和译文两行**：之前跟随网页的“仅显示译文”只显示译文行，与“双语字幕”的名称不符，测试中被当成 bug
 - **面板首页的快速翻译更好认**：加上“快速翻译 · 中英自动互译”标题、带边框的输入框和金色“翻译”按钮（之前只有一行占位文字，容易被当成空卡片）
@@ -99,6 +105,7 @@
 
 ### 测试
 
+- 测试随额度改动更新：后端单元测试新增 AI 点数加权、字符额度、暂不开放的引擎（共 30 项）；核心回归、账户测试的用量字段与文案改为 AI 点数；云端自动回归的 E-01、F-01、F-03 ~ F-08 按新规则校验，新增 F-06b“DeepL / Microsoft 字符额度用完”
 - 真实网站测试新增“刷新插件后”场景（reload，放在最后执行）：刷新前打开的侧面板刷新后仍能用 ✕ 关掉、旧悬浮球给出刷新提示；修复前两项都失败（`tests/e2e_real.py` 共 88 项）
 - 真实网站测试新增“靠换行分段的文字”场景（`tests/fixtures/preline.html`，仿 Product Hunt 评论）：译文保留分段与空行、小标题单独成行、不改动原文文字节点、普通段落不受影响（`tests/e2e_real.py` 共 79 项）
 - **安全检查自动化**：新增 `tests/security_cloud.py`，对云端用临时免费账号的令牌验证 H-01 ~ H-06：不能自己改会员等级、不能写云端生词和用量、未登录不能用翻译代理（免费用户调大模型被等级校验拒绝）、伪造支付通知被拒且会员状态不变；并在插件发布文件与打包 zip 中按格式搜索、逐个比对真实密钥值，确认没有服务端密钥（共 8 项，测完删除临时账号）
@@ -142,6 +149,13 @@
 
 ### 其他
 
+- **开源准备**（发布计划 4.6）
+  - 新增 `CONTRIBUTING.md`（本地运行、测试、提交要求）、`SECURITY.md`（通过 GitHub 私密漏洞报告提交安全问题）、`CODE_OF_CONDUCT.md`（采用 Contributor Covenant 2.1）
+  - 新增 `.github/`：问题反馈与功能建议模板、PR 模板，以及 CI（后端单元测试与类型检查、扩展 JS 语法检查、防止误提交密钥、核心回归）
+  - 新增 `supabase/functions/.env.example`、`supabase/.env.example`：自建后端需要的全部环境变量名与说明，不含任何真实值
+  - README 增加英文简介、“快速开始”“自建后端”“参与贡献”三节
+  - `.gitignore` 补充：任意位置的 `.env` / `.env.*`（示例文件除外）、`supabase/snippets/`、编辑器目录
+  - 敏感信息排查：当前文件与 git 历史中没有发现真实密钥；文档中的 Stripe 账户号、价格 ID、门户配置 ID 与本机路径已移除
 - **新增打包脚本** `scripts/package.py`：按版本号生成 `dist/glimmer-v<版本>.zip`，只放运行所需文件，并自检引用完整、没有密钥、打包后的插件能通过核心回归；`dist/` 加入忽略
 - 判断开发版不再缓存结果（每次读取 `installType`），便于测试
 - 数据库迁移 `20261119000000_tiers_usage_words.sql`：会员等级改为 `free` / `premium` / `premium_plus`（旧的 `pro` 迁移为 `premium_plus`）、`is_member` 函数、`usage_monthly` 用量表与原子累加函数 `add_usage`、`words` 生词云同步表（只有会员可读写）

@@ -23,7 +23,7 @@
 返回页 billing-return ──扩展检测到后刷新会员状态◀── 数据库 plan = 'premium' / 'premium_plus'
 
 扩展（DeepL / Microsoft / 大模型）──▶ Edge Function：translate
-                                       │ 校验登录与会员等级、本月 Token 用量
+                                       │ 校验登录与会员等级、本月 AI 点数与字符额度
                                        ▼
                               DeepL · Azure · OpenAI · Gemini · DeepSeek · Claude
                                        │ 译文 + Token 数
@@ -35,7 +35,7 @@
 | 目录 / 文件 | 作用 |
 | --- | --- |
 | `supabase/migrations/…_accounts_billing.sql` | 建表：`profiles`（会员状态）、`subscriptions`（订阅明细）、`stripe_events`（事件去重），以及行级权限和注册触发器 |
-| `supabase/migrations/…_tiers_usage_words.sql` | 三档会员（`free` / `premium` / `premium_plus`）、`usage_monthly`（每月 Token 用量）、`add_usage` 原子累加、`words`（生词本云同步） |
+| `supabase/migrations/…_tiers_usage_words.sql` | 三档会员（`free` / `premium` / `premium_plus`）、`usage_monthly`（每月 Token、AI 点数与字符用量）、`add_usage` 原子累加、`words`（生词本云同步） |
 | `supabase/functions/translate` | 翻译代理：校验会员等级与本月用量，调用 DeepL、Microsoft 或大模型，记录用量 |
 | `supabase/functions/_shared/translate.ts` | 引擎等级表、访问检查、各服务商请求，有单元测试 |
 | `supabase/functions/billing-checkout` | 按所选方案（Premium 年付、Premium+ 月付 / 年付）创建 Stripe 订阅支付页，需要登录；已是会员时提示改用客户门户 |
@@ -169,7 +169,10 @@ npx supabase secrets set \
 | `GEMINI_API_KEY`、`GEMINI_MODEL` | Gemini | `gemini-2.5-flash` |
 | `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` | DeepSeek | `deepseek-chat` |
 | `ANTHROPIC_API_KEY`、`CLAUDE_MODEL` | Claude | `claude-haiku-5-5` |
-| `TOKEN_LIMIT_MONTHLY` | Premium+ 每月 Token 额度 | `20000000` |
+| `POINT_LIMIT_MONTHLY` | Premium+ 每月 AI 点数（1 点 = Claude Haiku 1 个 Token，其他模型按成本加权） | `15000000` |
+| `CHAR_LIMIT_PREMIUM` / `CHAR_LIMIT_PLUS` | DeepL、Microsoft 合计的每月字符上限 | `100000` / `200000` |
+| `DISABLED_ENGINES` | 暂不开放的引擎，逗号分隔（返回“即将开放”） | `openai,gemini` |
+| `DEEPSEEK_MODEL` | DeepSeek 模型 | `deepseek-flash` |
 
 各家 Key 的申请方式：[DeepL API](https://www.deepl.com/pro-api)、[Azure 门户](https://portal.azure.com) 搜索 Translator、[OpenAI](https://platform.openai.com/api-keys)、[Google AI Studio](https://aistudio.google.com/apikey)、[DeepSeek](https://platform.deepseek.com)、[Anthropic Console](https://console.anthropic.com)。
 
@@ -225,7 +228,7 @@ npx supabase db query --remote --yes -f supabase/migrations/<迁移文件>.sql
 | 2 | 点击邮件中的验证链接，回到面板登录 | 显示邮箱和“免费版” |
 | 3 | 面板首页右上角“Premium” → 方案页切到“月付方案” → “开通 Premium+” | 新标签页打开 Stripe 支付页 |
 | 4 | 用测试卡 `4242 4242 4242 4242`，任意未来日期、任意 CVC 付款 | 跳到“订阅成功”页面 |
-| 5 | 回到面板 | 几秒内变为“Premium+ 会员”，显示下次续费日期和本月 AI 用量，右上角变为实心“Premium+” |
+| 5 | 回到面板 | 几秒内变为“Premium+ 会员”，显示下次续费日期、本月 AI 点数与 DeepL / Microsoft 字符用量，右上角变为实心“Premium+” |
 | 6 | 设置 → 翻译引擎选 DeepSeek，翻译一个网页 | 译文正常；账户页本月用量增加，`usage_monthly` 有记录 |
 | 7 | 收藏一个生词 | `words` 表出现该词（Premium 及以上自动同步） |
 | 8 | 点击“管理订阅” → 取消订阅 | 回到面板后显示“已取消续费，Premium+ 有效期至……” |
@@ -262,7 +265,8 @@ stripe trigger customer.subscription.updated
 | 注册提示“操作太频繁” | Supabase 默认邮件服务的频率限制，配置自己的 SMTP |
 | 点击“开通”提示“缺少环境变量 STRIPE_PRICE_…” | 第四部分的 `secrets set` 没有执行或拼写错误 |
 | 会员翻译提示“服务端尚未配置 … 的 API Key” | 该引擎对应的服务商 Key 没有设置（`translate` 函数返回 503），见第四部分 |
-| Premium+ 提示“本月 AI 用量已用完” | 已达到 `TOKEN_LIMIT_MONTHLY`；下月 1 日（UTC）自动清零，测试时可删除 `usage_monthly` 中对应行 |
+| Premium+ 提示“本月 AI 点数已用完” | 已达到 `POINT_LIMIT_MONTHLY`；下月 1 日（UTC）自动清零，测试时可删除 `usage_monthly` 中对应行 |
+| 提示“本月 DeepL / Microsoft 翻译额度已用完” | 已达到 `CHAR_LIMIT_PREMIUM` / `CHAR_LIMIT_PLUS`；同上 |
 | 支付成功但一直是免费版 | 检查 Stripe 后台 webhook 的发送记录：401 说明部署时漏了 `--no-verify-jwt`；400 说明 `STRIPE_WEBHOOK_SECRET` 不对；500 查看函数日志 |
 | 点击“管理订阅”报错 | Stripe 后台没有保存客户门户设置（第三部分第三步） |
 | 测试时想重置某个用户为免费版 | 在 SQL Editor 执行 `update profiles set plan='free' where email='…'`，或在 Stripe 后台取消其订阅 |
@@ -285,14 +289,14 @@ stripe trigger customer.subscription.updated
 
 | 引擎 | 后端使用的模型 | 计费 | 单价 | 来源 |
 | --- | --- | --- | --- | --- |
-| DeepSeek | `deepseek-chat`（默认） | 按 Token | 现行型号 `deepseek-flash`：输入 $0.30 / 输出 $1.20 每百万 Token（高峰）；非高峰（UTC 01–04、06–10 点之外）半价；缓存命中输入 $0.006 | [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing) |
+| DeepSeek | `deepseek-flash`（默认，2026-11-24 起；原为 `deepseek-chat`） | 按 Token | 现行型号 `deepseek-flash`：输入 $0.30 / 输出 $1.20 每百万 Token（高峰）；非高峰（UTC 01–04、06–10 点之外）半价；缓存命中输入 $0.006 | [DeepSeek 官方价格页](https://api-docs.deepseek.com/quick_start/pricing) |
 | OpenAI | `gpt-4.1-mini` | 按 Token | 输入 $0.40 / 输出 $1.60 每百万 Token | [OpenAI 模型页](https://developers.openai.com/api/docs/models/gpt-4.1-mini) |
 | Gemini | `gemini-2.5-flash` | 按 Token | 输入 $0.30 / 输出 $2.50 每百万 Token | [Google AI 价格页](https://ai.google.dev/gemini-api/docs/pricing) |
 | Claude | `claude-haiku-5-5` | 按 Token | 输入 $0.10 / 输出 $0.50 每百万 Token（单次 10 万 Token 以内） | Anthropic 官方模型价格表 |
 | DeepL | DeepL API Pro | 按字符 | $25 每百万字符，另有每月基础费 $5.49 | [DeepL 计费说明](https://support.deepl.com/hc/en-us/articles/360020685720-Usage-count-and-billing-in-DeepL-API)、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-2fii5e2hmuneo) |
 | Microsoft | Azure Translator S1 | 按字符 | 约 $10 每百万字符；每月前 200 万字符免费（F0 免费层） | [Azure Translator 价格页](https://azure.microsoft.com/en-us/pricing/details/translator/)（S1 价格未显示，取自旧版页面与官方问答） |
 
-> **风险：** 后端默认的 `deepseek-chat` 已不在 DeepSeek 官方价格表中（现行名称为 `deepseek-flash`、`deepseek-v4-pro`），目前仍能调用（2026-11-24 回归通过），但随时可能下线，届时 Premium+ 的默认引擎会全部失败。建议把 `DEEPSEEK_MODEL` 设为 `deepseek-flash`（需决策 D4 时一并确认）。
+> **已处理：** 原默认的 `deepseek-chat` 已不在 DeepSeek 官方价格表中，2026-11-24 起默认改为 `deepseek-flash`（决策 D4）。
 
 ### 10.2 收入（扣除 Stripe 手续费 2.9% + $0.30 后）
 
@@ -335,3 +339,13 @@ DeepL、Microsoft 目前只记录字符数、不设上限，Premium+ 用户的 D
 3. **首发引擎（D4）优先选便宜的大模型**：Claude Haiku 5.5、DeepSeek；Gemini 2.5 Flash 输出价格最高，可以晚开
 4. **把 DeepSeek 默认模型改为 `deepseek-flash`**。用户什么时候翻译无法控制，测算时按高峰价更稳妥
 5. 上线后用 `usage_monthly` 的真实数据（字符数、Token 数）每月复核一次，再调整额度
+
+### 10.6 已采用的方案（2026-11-24，决策 D1、D4 与 2.3）
+
+| 项 | 方案 | 用满时的成本 |
+| --- | --- | --- |
+| Premium+ AI 点数 | 每月 1500 万点；Claude 1 倍、DeepSeek 2.5 倍、GPT 3.4 倍、Gemini 4.6 倍（`ENGINE_WEIGHT`） | 任何引擎约 $4.2（净收入 $5.53） |
+| DeepL / Microsoft 字符 | Premium 每月 10 万字符、Premium+ 20 万字符，两者合计；用完自动改用 Google | 全用 DeepL 时 Premium $2.5、Premium+ $5 |
+| 首发引擎 | Google、DeepL、Microsoft、DeepSeek（`deepseek-flash`）、Claude；GPT、Gemini 即将开放（`DISABLED_ENGINES`） | — |
+
+**仍有的风险：** Premium 用满 DeepL 时成本（$2.5）略高于净收入（$2.32）；Premium+ 同时用满点数与 DeepL 时最坏约 $9。大多数用户用不满，上线后按 `usage_monthly` 的真实分布调整——三个额度都是环境变量，改 `supabase secrets` 即可，不用改代码或发新版本插件（插件显示的上限以后端返回为准）。

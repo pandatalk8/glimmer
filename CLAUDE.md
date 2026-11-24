@@ -26,7 +26,7 @@
 python3 tests/e2e.py          # 核心回归，36 项
 python3 tests/e2e_real.py     # 真实网站与交互，88 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），72 项
-deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅、翻译代理与邮箱域名检查逻辑，27 项
+deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅、翻译代理（AI 点数与字符额度）与邮箱域名检查逻辑，30 项
 python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），24 项
 python3 tests/security_cloud.py   # 安全检查 H-01 ~ H-06：云端越权与插件中没有服务端密钥，8 项，需已登录 Supabase CLI
 python3 tests/e2e_cloud_billing.py  # 旅程四至七（开通、权益、额度、管理订阅）在云端 + Stripe 沙盒自动回归，44 项，需已登录 Supabase CLI

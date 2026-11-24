@@ -4,8 +4,8 @@ export const ENGINES = [
   { id: 'google', name: 'Google 翻译', type: 'mt', tier: 'free' },
   { id: 'deepl', name: 'DeepL', type: 'mt', tier: 'premium' },
   { id: 'microsoft', name: 'Microsoft 翻译', type: 'mt', tier: 'premium' },
-  { id: 'openai', name: 'OpenAI GPT', type: 'llm', tier: 'premium_plus' },
-  { id: 'gemini', name: 'Google Gemini', type: 'llm', tier: 'premium_plus' },
+  { id: 'openai', name: 'OpenAI GPT', type: 'llm', tier: 'premium_plus', soon: true }, // soon：首发暂不开放（决策 D4），与后端 DISABLED_ENGINES 一致
+  { id: 'gemini', name: 'Google Gemini', type: 'llm', tier: 'premium_plus', soon: true },
   { id: 'deepseek', name: 'DeepSeek', type: 'llm', tier: 'premium_plus' },
   { id: 'claude', name: 'Anthropic Claude', type: 'llm', tier: 'premium_plus' },
 ];
