@@ -1,7 +1,7 @@
 // 运行：deno test supabase/functions/
 import { assertEquals } from 'jsr:@std/assert@1.0.13';
 import {
-  charLimitFor, checkAccess, cnNum, DEFAULT_CHAR_LIMIT, DEFAULT_POINT_LIMIT, llmTranslate, monthKey, pack, parseBatch, pointsFor, type Chat,
+  availableEngines, charLimitFor, checkAccess, cnNum, disabledEngines, DEFAULT_CHAR_LIMIT, DEFAULT_POINT_LIMIT, llmTranslate, monthKey, pack, parseBatch, pointsFor, type Chat,
 } from './translate.ts';
 
 const NONE = { points: 0, chars: 0 };
@@ -106,4 +106,12 @@ Deno.test('批量解析失败时逐段翻译，Token 全部计入', async () => 
   const r = await llmTranslate(chat, ['a', 'b'], 'zh-CN');
   assertEquals(r.out, ['译a', '译b']);
   assertEquals(r.tokens, 70);
+});
+
+Deno.test('可用引擎：只返回配置了密钥且未暂停的付费引擎', () => {
+  const env: Record<string, string> = { DEEPL_API_KEY: 'k', DEEPSEEK_API_KEY: 'k', OPENAI_API_KEY: 'k', ANTHROPIC_API_KEY: ' ' };
+  const get = (n: string) => env[n];
+  assertEquals(availableEngines(get, disabledEngines(undefined)), ['deepl', 'deepseek']); // GPT 默认暂停；Claude 密钥为空白
+  assertEquals(availableEngines(get, disabledEngines('')), ['deepl', 'openai', 'deepseek']); // 全部开放
+  assertEquals(availableEngines(() => undefined, disabledEngines('')), []);
 });

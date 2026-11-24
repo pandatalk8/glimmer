@@ -1,10 +1,12 @@
-import { getSettings, saveSettings, ENGINES, DEFAULT_SETTINGS, PLAN_NAME, canUse } from '../src/shared/settings.js';
+import { getSettings, saveSettings, ENGINES, visibleEngines, DEFAULT_SETTINGS, PLAN_NAME, canUse } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES } from '../src/shared/languages.js';
 import { buildLabel, buildShort } from '../src/shared/build.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 let S = await getSettings();
+// 服务器配置了 API Key 的付费引擎；没配置的引擎不在设置页出现
+const avail = await chrome.runtime.sendMessage({ type: 'engines' }).then((r) => (r?.ok ? r.data : [])).catch(() => []);
 
 $('#ver').textContent = 'v' + chrome.runtime.getManifest().version;
 
@@ -119,7 +121,7 @@ const opts = (list) => list.map((l) => `<option value="${l.code}">${l.name}</opt
 $('#targetLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#inputLang').innerHTML = opts(TARGET_LANGUAGES);
 $('#sourceLang').innerHTML = opts(LANGUAGES);
-$('#engineSel').innerHTML = ENGINES.map((e) => `<option value="${e.id}" ${e.soon ? 'disabled' : ''}>${e.name}${e.soon ? '（即将开放）' : e.tier === 'free' ? '' : '（' + PLAN_NAME[e.tier] + '）'}</option>`).join('');
+$('#engineSel').innerHTML = visibleEngines(avail).map((e) => `<option value="${e.id}">${e.name}${e.tier === 'free' ? '' : '（' + PLAN_NAME[e.tier] + '）'}</option>`).join('');
 
 // ---------- data-path 双向绑定 ----------
 const getPath = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
@@ -182,16 +184,14 @@ async function loadPlan() {
 
 function renderEngines() {
   const box = $('#engineCards');
-  box.innerHTML = ENGINES.map((e) => {
+  box.innerHTML = visibleEngines(avail).map((e) => {
     const ui = ENGINE_UI[e.id];
     const isDefault = S.engine === e.id;
-    const ok = canUse(plan, e.id) && !e.soon;
+    const ok = canUse(plan, e.id);
     const tag = e.tier === 'free' ? '<span class="e-tag free">免费</span>' : `<span class="e-tag ${e.tier === 'premium_plus' ? 'llm' : ''}">${PLAN_NAME[e.tier]}</span>`;
-    const action = e.soon
-      ? '<button class="ghost use" disabled>即将开放</button>'
-      : ok
-        ? `<button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>`
-        : '<button class="ghost use" data-act="premium">升级解锁</button>';
+    const action = ok
+      ? `<button class="ghost use ${isDefault ? 'on' : ''}" data-act="use">${isDefault ? '默认' : '设为默认'}</button>`
+      : '<button class="ghost use" data-act="premium">升级解锁</button>';
     return `
       <div class="card engine ${isDefault ? 'default' : ''} ${ok ? '' : 'locked'}" data-id="${e.id}">
         <div class="e-head">
@@ -238,9 +238,8 @@ $('#engineCards').addEventListener('click', async (e) => {
 
 // 默认引擎下拉框：只允许选择已解锁的引擎
 $('#engineSel').addEventListener('change', async (e) => {
-  const eng = ENGINES.find((x) => x.id === e.target.value);
-  if (canUse(plan, e.target.value) && !eng.soon) return;
-  toast(eng.soon ? `${eng.name} 即将开放` : `该引擎需要 ${PLAN_NAME[eng.tier]} 会员`);
+  if (canUse(plan, e.target.value)) return;
+  toast(`该引擎需要 ${PLAN_NAME[ENGINES.find((x) => x.id === e.target.value).tier]} 会员`);
   e.target.value = S.engine;
   e.stopImmediatePropagation();
 }, true);

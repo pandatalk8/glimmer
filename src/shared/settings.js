@@ -4,11 +4,22 @@ export const ENGINES = [
   { id: 'google', name: 'Google 翻译', type: 'mt', tier: 'free' },
   { id: 'deepl', name: 'DeepL', type: 'mt', tier: 'premium' },
   { id: 'microsoft', name: 'Microsoft 翻译', type: 'mt', tier: 'premium' },
-  { id: 'openai', name: 'OpenAI GPT', type: 'llm', tier: 'premium_plus', soon: true }, // soon：首发暂不开放（决策 D4），与后端 DISABLED_ENGINES 一致
-  { id: 'gemini', name: 'Google Gemini', type: 'llm', tier: 'premium_plus', soon: true },
+  { id: 'openai', name: 'OpenAI GPT', type: 'llm', tier: 'premium_plus' },
+  { id: 'gemini', name: 'Google Gemini', type: 'llm', tier: 'premium_plus' },
   { id: 'deepseek', name: 'DeepSeek', type: 'llm', tier: 'premium_plus' },
   { id: 'claude', name: 'Anthropic Claude', type: 'llm', tier: 'premium_plus' },
 ];
+
+/** 界面上显示的引擎：免费引擎，加上服务器配置了 API Key 的付费引擎（后台 engines 消息返回的名单） */
+export const visibleEngines = (available = []) => ENGINES.filter((e) => e.tier === 'free' || available.includes(e.id));
+
+/** 可用付费引擎的简称（“DeepL、Microsoft”“DeepSeek、Claude”），按类型：mt 机器翻译 / llm 大模型 */
+export const engineShortNames = (available = [], type) =>
+  visibleEngines(available)
+    .filter((e) => e.tier !== 'free' && e.type === type)
+    .map((e) => e.name.replace(/^(Anthropic|OpenAI|Google) /, '').replace(/ 翻译$/, ''))
+    .join('、');
+
 
 // 会员等级
 export const PLAN_RANK = { free: 0, premium: 1, premium_plus: 2 };

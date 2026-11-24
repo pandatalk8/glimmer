@@ -43,6 +43,7 @@
 | `supabase/functions/stripe-webhook` | 接收 Stripe 事件，验证签名后同步会员状态 |
 | `supabase/functions/billing-return` | 支付完成 / 取消 / 邮箱验证后跳转的返回地址。返回纯文本：云端 Supabase 会把 supabase.co 上 GET 请求返回的网页改成 `text/plain` 并加 `sandbox`（防钓鱼），网页会显示成源代码。扩展检测到这个地址后接管标签页：支付回到发起页面，邮箱验证换成扩展内的 `welcome/verified.html` |
 | `supabase/functions/check-email` | 注册前检查邮箱域名有没有邮件服务器（MX 记录），只接收域名。云端 Supabase 不会拒绝填错的域名（如 `a@panda.com`），照样“发出”验证邮件；扩展注册前先问这里，`deliverable: false` 时直接提示填错，最多等 4 秒。`.local`、`.test` 等测试域名放行。无需登录（`--no-verify-jwt`） |
+| `supabase/functions/engines/` | 当前可用的付费引擎（配置了 Key 且未暂停），公开、无需登录；插件只显示这些引擎 |
 | `supabase/functions/_shared/billing.ts` | 订阅同步的核心逻辑，有单元测试 |
 | `src/shared/config.js` | 扩展里填写 Supabase 地址和 anon key |
 
@@ -171,7 +172,7 @@ npx supabase secrets set \
 | `ANTHROPIC_API_KEY`、`CLAUDE_MODEL` | Claude | `claude-haiku-5-5` |
 | `POINT_LIMIT_MONTHLY` | Premium+ 每月 AI 点数（1 点 = Claude Haiku 1 个 Token，其他模型按成本加权） | `15000000` |
 | `CHAR_LIMIT_PREMIUM` / `CHAR_LIMIT_PLUS` | DeepL、Microsoft 合计的每月字符上限 | `100000` / `200000` |
-| `DISABLED_ENGINES` | 暂不开放的引擎，逗号分隔（返回“即将开放”） | `openai,gemini` |
+| `DISABLED_ENGINES` | 暂不开放的引擎，逗号分隔：不出现在插件界面中，直接调用时返回“即将开放” | `openai,gemini` |
 | `DEEPSEEK_MODEL` | DeepSeek 模型 | `deepseek-flash` |
 
 各家 Key 的申请方式：[DeepL API](https://www.deepl.com/pro-api)、[Azure 门户](https://portal.azure.com) 搜索 Translator、[OpenAI](https://platform.openai.com/api-keys)、[Google AI Studio](https://aistudio.google.com/apikey)、[DeepSeek](https://platform.deepseek.com)、[Anthropic Console](https://console.anthropic.com)。
@@ -290,6 +291,8 @@ stripe trigger customer.subscription.updated
 | Premium+ 每月 AI 点数 | 1500 万 | `POINT_LIMIT_MONTHLY` |
 | 每个 Token 折算的点数 | Claude 1、DeepSeek 2.5、GPT 3.4、Gemini 4.6（`ENGINE_WEIGHT`，按各家单价折算） | 改代码 |
 | DeepL、Microsoft 合计每月字符 | Premium 10 万、Premium+ 20 万 | `CHAR_LIMIT_PREMIUM`、`CHAR_LIMIT_PLUS` |
-| 暂不开放的引擎 | `openai,gemini`（返回“即将开放”） | `DISABLED_ENGINES`（设为空字符串则全部开放） |
+| 暂不开放的引擎 | `openai,gemini`（不在插件界面中出现） | `DISABLED_ENGINES`（设为空字符串则全部开放） |
+
+**插件只显示可用的引擎：** `engines` 函数（公开，无需登录）返回“配置了 API Key、且不在 `DISABLED_ENGINES` 中”的付费引擎；插件只显示这些引擎和 Google。所以新增一家服务商时，只要 `supabase secrets set` 写入它的 Key，插件在半小时内（或用户刷新账户状态后）就会显示它，不用发新版插件。
 
 自建部署时，请按你所用服务商的实际价格与你的定价重新核算这些数字。

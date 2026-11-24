@@ -15,10 +15,12 @@
 | Google 翻译（默认） | 机器翻译 | 免费 | 浏览器直接调用 Google 公开接口 |
 | DeepL | 机器翻译 | Premium | 后端代理 |
 | Microsoft 翻译 | 机器翻译 | Premium | 后端代理（Azure Translator） |
-| OpenAI GPT | 大模型 | Premium+ | 即将开放（每个 Token 计 3.4 点） |
-| Google Gemini | 大模型 | Premium+ | 即将开放（每个 Token 计 4.6 点） |
+| OpenAI GPT | 大模型 | Premium+ | 后端代理，每个 Token 计 3.4 点 |
+| Google Gemini | 大模型 | Premium+ | 后端代理，每个 Token 计 4.6 点 |
 | DeepSeek | 大模型 | Premium+ | 后端代理，每个 Token 计 2.5 点 |
 | Anthropic Claude | 大模型 | Premium+ | 后端代理，每个 Token 计 1 点 |
+
+**只显示可用的引擎：** 服务器没有配置 API Key（或用 `DISABLED_ENGINES` 暂停）的付费引擎，不会出现在面板、划词面板、完整设置页和方案页中。插件从后端 `engines` 接口读取可用名单，按后端地址缓存 30 分钟，刷新账户状态时立即更新。
 
 > Google 接口为非官方免费接口，高频使用时可能被临时限流（返回 429）。遇到这种情况稍等片刻，或切换到会员引擎。
 
@@ -30,7 +32,7 @@
 | --- | --- | --- |
 | 免费版 | $0 | 全部翻译方式、YouTube 双语字幕、Google 翻译、生词本最多 100 个 |
 | Premium | $29 / 年（仅年付） | 免费版全部功能 + 无限生词本、生词本云同步、DeepL、Microsoft 翻译 |
-| Premium+ | $6 / 月，或 $69 / 年 | Premium 全部功能 + DeepSeek、Claude（GPT、Gemini 即将开放），每月 1500 万 AI 点数；DeepL、Microsoft 合计每月 20 万字符 |
+| Premium+ | $6 / 月，或 $69 / 年 | Premium 全部功能 + 大模型（GPT、Gemini、DeepSeek、Claude 中服务器已配置的），每月 1500 万 AI 点数；DeepL、Microsoft 合计每月 20 万字符 |
 
 入口：面板首页右上角的“Premium”标签（会员时显示为实心的“Premium / Premium+”），或账户页“查看会员方案”。方案页可切换月付、年付，点击“开通”后在新标签页的 Stripe 页面付款。已经是会员时，升级或切换方案在“管理订阅”（Stripe 客户门户）中完成，避免重复订阅。
 

@@ -13,9 +13,9 @@ ENV = sys.argv[1] if len(sys.argv) > 1 else 'supabase/functions/.env'
 CURRENCY = 'usd'
 PLANS = [
     # (产品 metadata.plan, 产品名称, 描述, [(lookup_key, 金额（分）, 周期, .env 变量名)])
-    ('premium', '微光翻译 Premium', '无限生词本、生词本云同步、DeepL 与 Microsoft 专业翻译',
+    ('premium', '微光翻译 Premium', '无限生词本、生词本云同步、专业机器翻译（每月 10 万字符）',
      [('glimmer_premium_yearly', 2900, 'year', 'STRIPE_PRICE_PREMIUM_YEARLY')]),
-    ('premium_plus', '微光翻译 Premium+ 高级 AI', 'Premium 全部功能 + GPT、Gemini、DeepSeek、Claude，每月 2000 万 Token',
+    ('premium_plus', '微光翻译 Premium+ 高级 AI', 'Premium 全部功能 + 大模型翻译，每月 1500 万 AI 点数',
      [('glimmer_plus_monthly', 600, 'month', 'STRIPE_PRICE_PLUS_MONTHLY'),
       ('glimmer_plus_yearly', 6900, 'year', 'STRIPE_PRICE_PLUS_YEARLY')]),
 ]

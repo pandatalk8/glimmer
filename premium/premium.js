@@ -1,5 +1,5 @@
 // 会员方案页：三档方案、月付 / 年付切换、功能对比；未登录时弹出登录窗口，登录后继续支付
-import { PLAN_NAME, ENGINES, getSettings, saveSettings } from '../src/shared/settings.js';
+import { PLAN_NAME, ENGINES, visibleEngines, engineShortNames, getSettings, saveSettings } from '../src/shared/settings.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -13,6 +13,26 @@ const PRICE = {
 const money = (n) => '$' + (Number.isInteger(n) ? n : n.toFixed(2));
 
 const check = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/></svg>';
+
+// 服务器配置了 API Key 的付费引擎：没配置的引擎不在方案页出现
+const avail = await chrome.runtime.sendMessage({ type: 'engines' }).then((r) => (r?.ok ? r.data : [])).catch(() => []);
+const FEATURE = {
+  deepl: ['DeepL 专业翻译', '欧洲语言翻译质量出色'],
+  microsoft: ['Microsoft 翻译'],
+  deepseek: ['DeepSeek'],
+  claude: ['Anthropic Claude'],
+  openai: ['OpenAI GPT'],
+  gemini: ['Google Gemini'],
+};
+const WEIGHT = { claude: 1, deepseek: 2.5, openai: 3.4, gemini: 4.6 }; // 与后端 ENGINE_WEIGHT 一致
+const paid = (type) => visibleEngines(avail).filter((e) => e.tier !== 'free' && e.type === type).map((e) => FEATURE[e.id]);
+const MT = engineShortNames(avail, 'mt');
+const LLM = engineShortNames(avail, 'llm');
+const LLM_WEIGHTS = visibleEngines(avail)
+  .filter((e) => e.type === 'llm')
+  .sort((x, y) => WEIGHT[x.id] - WEIGHT[y.id])
+  .map((e) => `${e.name.replace(/^(Anthropic|OpenAI|Google) /, '')} ${WEIGHT[e.id]} 倍`)
+  .join('、');
 
 const PLANS = [
   {
@@ -33,27 +53,16 @@ const PLANS = [
     title: 'Premium',
     badge: '最超值',
     section: 'Premium 高级功能',
-    features: [
-      ['免费版全部功能'],
-      ['无限生词本', '收藏单词与句子不限数量'],
-      ['生词本云同步', '换电脑、重装插件后登录即可恢复'],
-      ['DeepL 专业翻译', '欧洲语言翻译质量出色'],
-      ['Microsoft 翻译'],
-    ],
-    note: 'DeepL 与 Microsoft 合计每月 10 万字符，用完后自动改用 Google 翻译，下月 1 日恢复。',
+    features: [['免费版全部功能'], ['无限生词本', '收藏单词与句子不限数量'], ['生词本云同步', '换电脑、重装插件后登录即可恢复'], ...paid('mt')],
+    note: MT ? `${MT} 合计每月 10 万字符，用完后自动改用 Google 翻译，下月 1 日恢复。` : '',
   },
   {
     id: 'premium_plus',
     title: 'Premium+ 高级 AI',
     badge: '最多人购买',
     section: 'Premium 功能 + 高级 AI 引擎',
-    features: [
-      ['Premium 全部功能', 'DeepL 与 Microsoft 每月 20 万字符'],
-      ['DeepSeek'],
-      ['Anthropic Claude'],
-      ['OpenAI GPT、Google Gemini', '即将开放'],
-    ],
-    note: '每月 1500 万 AI 点数，满足日常阅读、学习与工作中的高质量翻译需求。不同模型消耗点数不同（Claude 1 倍、DeepSeek 2.5 倍）。',
+    features: [['Premium 全部功能', MT ? `${MT} 每月 20 万字符` : ''], ...paid('llm')],
+    note: `每月 1500 万 AI 点数，满足日常阅读、学习与工作中的高质量翻译需求。${LLM_WEIGHTS ? `不同模型消耗点数不同（${LLM_WEIGHTS}）。` : ''}`,
   },
 ];
 
@@ -67,9 +76,8 @@ const COMPARE = [
   ['生词本云同步', '—', '✓', '✓'],
   ['翻译引擎'],
   ['Google 翻译', '✓', '✓', '✓'],
-  ['DeepL、Microsoft 翻译', '—', '10 万字符 / 月', '20 万字符 / 月'],
-  ['DeepSeek、Anthropic Claude', '—', '—', '1500 万 AI 点数 / 月'],
-  ['OpenAI GPT、Google Gemini', '—', '—', '即将开放'],
+  ...(MT ? [[MT, '—', '10 万字符 / 月', '20 万字符 / 月']] : []),
+  ...(LLM ? [[LLM, '—', '—', '1500 万 AI 点数 / 月']] : []),
 ];
 
 const RANK = { free: 0, premium: 1, premium_plus: 2 };
@@ -231,8 +239,8 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 
 // ---------- 支付结果：后台在支付完成后切回本页，并写入 billingResult ----------
 const UNLOCKED = {
-  premium: ['生词本不限数量，自动云同步', 'DeepL 专业翻译（每月 10 万字符）', 'Microsoft 翻译'],
-  premium_plus: ['生词本不限数量，自动云同步', 'DeepL、Microsoft 专业翻译（每月 20 万字符）', 'DeepSeek、Claude 大模型（GPT、Gemini 即将开放）', '每月 1500 万 AI 点数'],
+  premium: ['生词本不限数量，自动云同步', ...(MT ? [`${MT} 专业翻译（每月 10 万字符）`] : [])],
+  premium_plus: ['生词本不限数量，自动云同步', ...(MT ? [`${MT} 专业翻译（每月 20 万字符）`] : []), ...(LLM ? [`${LLM} 大模型`] : []), '每月 1500 万 AI 点数'],
 };
 const RESULT_TEXT = {
   pending: '支付已完成，会员正在开通，稍后会自动生效',
@@ -264,7 +272,10 @@ async function showBillingResult() {
   }
 }
 // 开通后推荐的默认引擎（第一个为默认选中）
-const SUGGEST = { premium: ['deepl'], premium_plus: ['deepseek', 'deepl'] };
+const SUGGEST = {
+  premium: ['deepl', 'microsoft'].filter((e) => avail.includes(e)).slice(0, 1),
+  premium_plus: ['deepseek', 'deepl', 'claude'].filter((e) => avail.includes(e)).slice(0, 2), // 默认推荐 DeepSeek + DeepL，缺哪个用 Claude 补
+};
 const FROM = (() => {
   const v = new URLSearchParams(location.search).get('from');
   return v && /^\d+$/.test(v) ? Number(v) : null;

@@ -42,7 +42,7 @@
 | --- | --- | --- | --- | --- |
 | 免费版 | $0 | Google | 本机，最多 100 个 | 全部翻译方式、YouTube 双语字幕；不需要登录 |
 | Premium | $29 / 年（仅年付） | + DeepL、Microsoft（合计每月 10 万字符） | 不限数量（上限 5000），云同步 | 需要登录 |
-| Premium+ | $6 / 月，或 $69 / 年 | + DeepSeek、Claude（GPT、Gemini 即将开放） | 同 Premium | 每月 1500 万 AI 点数（按引擎成本折算），DeepL / Microsoft 合计 20 万字符，每月 1 日（UTC）重置 |
+| Premium+ | $6 / 月，或 $69 / 年 | + 大模型（GPT、Gemini、DeepSeek、Claude 中服务器已配置的） | 同 Premium | 每月 1500 万 AI 点数（按引擎成本折算），DeepL / Microsoft 合计 20 万字符，每月 1 日（UTC）重置 |
 
 **规则：**
 

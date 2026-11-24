@@ -1,4 +1,4 @@
-import { getSettings, saveSettings, ENGINES, FREE_WORD_LIMIT, PLAN_RANK, PLAN_NAME, canUse } from '../shared/settings.js';
+import { getSettings, saveSettings, ENGINES, visibleEngines, FREE_WORD_LIMIT, PLAN_RANK, PLAN_NAME, canUse } from '../shared/settings.js';
 import { LANGUAGES } from '../shared/languages.js';
 import { google } from './engines/mt.js';
 import { cacheGetMany, cacheSetMany, cacheClear } from './cache.js';
@@ -9,6 +9,9 @@ account.watchWordSync();
 
 // 旧版本在设置中保存的 API Key、模型与提示词已不再使用：安装或刷新插件时从存储中清除
 chrome.runtime.onInstalled.addListener(() => saveSettings({}).catch(() => {}));
+// 可用付费引擎名单：后台每次启动、安装或刷新插件时更新（有缓存时不重复请求）
+account.availablePaidEngines().catch(() => {});
+chrome.runtime.onInstalled.addListener(() => account.availablePaidEngines({ force: true }).catch(() => {}));
 
 // Google 在浏览器中直接调用（免费）；其余引擎全部经由微光翻译后端，按会员等级开放
 async function runEngine(engineId, texts, opts) {
@@ -121,6 +124,7 @@ const handlers = {
   // 账户与订阅
   accountState: () => account.accountState(),
   accountRefresh: async () => {
+    account.availablePaidEngines({ force: true }).catch(() => {});
     await account.refreshAccount();
     return account.accountState();
   },
@@ -144,7 +148,13 @@ const handlers = {
   hasWord: async ({ word }) => (await getWords()).some((w) => wordKey(w.w) === wordKey(word)),
   getSettings: () => getSettings(),
   saveSettings: ({ patch }) => saveSettings(patch),
-  meta: async () => ({ engines: ENGINES, languages: LANGUAGES, plan: (await chrome.storage.local.get('account')).account?.plan || 'free' }),
+  meta: async () => ({
+    engines: visibleEngines(await account.availablePaidEngines()),
+    languages: LANGUAGES,
+    plan: (await chrome.storage.local.get('account')).account?.plan || 'free',
+  }),
+  // 当前可用的付费引擎（服务器配置了 Key 的）；界面只显示这些
+  engines: ({ force } = {}) => account.availablePaidEngines({ force }),
   clearCache: () => cacheClear().then(() => true),
   openOptions: () => chrome.runtime.openOptionsPage(),
   testEngine: async ({ engine }) => {

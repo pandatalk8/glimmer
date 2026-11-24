@@ -24,10 +24,22 @@ http.server.SimpleHTTPRequestHandler.log_message = lambda *a: None
 LLM_CALLS = []
 
 
+AVAILABLE = ['deepl', 'microsoft', 'openai', 'gemini', 'deepseek', 'claude']  # 模拟后端配置了 Key 的付费引擎
+
+
 class MockBackend(http.server.BaseHTTPRequestHandler):
     """模拟微光翻译后端的翻译代理：校验登录令牌，返回译文与用量"""
     def log_message(self, *a):
         pass
+
+    def do_GET(self):
+        # 当前可用的付费引擎：模拟后端全部配置了 Key
+        data = json.dumps({'engines': AVAILABLE}).encode()
+        self.send_response(200 if self.path.startswith('/functions/v1/engines') else 404)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -242,6 +254,17 @@ async def main():
         hint = await pn.locator('.usage.warn .hint').inner_text() if await pn.locator('.usage.warn').count() else ''
         check('点击进入账户页：AI 点数卡变为金色并说明用完后的影响', '用完后大模型会暂停到下月 1 日' in hint, hint)
         await pn.screenshot(path=f'{OUTPUT}/usage-warn.png')
+        # 服务器只配置了 DeepL 的 Key：面板引擎列表只显示 Google 与 DeepL，没配置的引擎不出现
+        AVAILABLE[:] = ['deepl']
+        await pn.evaluate("chrome.runtime.sendMessage({type:'engines',force:true})")
+        await pn.goto(f'chrome-extension://{eid}/panel/panel.html?view=home')
+        await pn.wait_for_timeout(500)
+        await pn.locator('[data-pick=engine]').first.click()
+        await pn.wait_for_selector('.opt[data-set=google]')
+        shown = await pn.evaluate("[...document.querySelectorAll('.opt[data-set]')].map(o=>o.dataset.set)")
+        check('没有配置 API Key 的引擎不显示：服务器只配了 DeepL 时，引擎列表只有 Google 与 DeepL', shown == ['google', 'deepl'], shown)
+        AVAILABLE[:] = ['deepl', 'microsoft', 'openai', 'gemini', 'deepseek', 'claude']
+        await pn.evaluate("chrome.runtime.sendMessage({type:'engines',force:true})")
         await pn.close()
 
         # 6b. 已登录会员，但后端连不上：默认引擎照样改用 Google，不显示“翻译失败”

@@ -59,6 +59,8 @@ class Mock(http.server.BaseHTTPRequestHandler):
             st = parse_qs(u.query).get('status', ['success'])[0]
             text = {'success': '支付成功，正在确认会员状态', 'cancel': '已取消支付'}.get(st, '订阅设置已保存')
             return self.send(200, f'<h1>{text}</h1>', 'text/html; charset=utf-8')
+        if u.path == '/functions/v1/engines':  # 当前可用的付费引擎：模拟后端全部配置了 Key
+            return self.send(200, {'engines': ['deepl', 'microsoft', 'openai', 'gemini', 'deepseek', 'claude']})
         if u.path == '/auth/v1/settings':
             return self.send(200, {'external': {'email': True, 'google': False}})
         if u.path in ('/fake-stripe/checkout', '/fake-stripe/portal'):

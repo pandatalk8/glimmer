@@ -28,6 +28,25 @@ export const ENGINE_NAME: Record<string, string> = {
   deepl: 'DeepL', microsoft: 'Microsoft 翻译', openai: 'OpenAI GPT', gemini: 'Google Gemini', deepseek: 'DeepSeek', claude: 'Claude',
 };
 
+// 每个付费引擎需要的服务端密钥：没有配置的引擎不对用户展示（engines 接口）
+export const ENGINE_KEY: Record<string, string> = {
+  deepl: 'DEEPL_API_KEY',
+  microsoft: 'AZURE_TRANSLATOR_KEY',
+  openai: 'OPENAI_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+  claude: 'ANTHROPIC_API_KEY',
+};
+
+/** 当前可用的付费引擎：配置了密钥、且不在 DISABLED_ENGINES 中 */
+export function availableEngines(getEnv: (name: string) => string | undefined, disabled: Set<string>): string[] {
+  return Object.keys(ENGINE_TIER).filter((e) => !!getEnv(ENGINE_KEY[e])?.trim() && !disabled.has(e));
+}
+
+/** DISABLED_ENGINES 环境变量（逗号分隔；未设置时用默认值，设为空字符串表示全部开放） */
+export const disabledEngines = (raw: string | undefined) =>
+  new Set((raw ?? DEFAULT_DISABLED_ENGINES.join(',')).split(',').map((s) => s.trim()).filter(Boolean));
+
 /** 本次大模型调用消耗的 AI 点数 */
 export const pointsFor = (engine: string, tokens: number) => Math.ceil(tokens * (ENGINE_WEIGHT[engine] ?? 1));
 

@@ -643,7 +643,7 @@
     const TIER = { premium: 'Premium', premium_plus: 'Premium+' };
     const locked = (e) => (RANK[e.tier] || 0) > (RANK[META?.plan] || 0);
     // 默认引擎还没解锁时，面板先用 Google 翻译（与整页翻译的自动改用一致）
-    let engine = engines.find((e) => e.id === S.engine && !locked(e) && !e.soon) ? S.engine : 'google';
+    let engine = engines.find((e) => e.id === S.engine && !locked(e)) ? S.engine : 'google';
     let to = pickTarget(text);
 
     panel = h('div', { class: 'panel' });
@@ -652,7 +652,7 @@
       <div class="p-head">
         <div class="p-brand">${LOGO}<span>微光翻译</span></div>
         <select class="p-engine">${engines
-          .map((e) => `<option value="${e.id}" ${e.id === engine ? 'selected' : ''} ${e.soon ? 'disabled' : ''}>${esc(e.name)}${e.soon ? '（即将开放）' : locked(e) ? `（${TIER[e.tier]}）` : ''}</option>`)
+          .map((e) => `<option value="${e.id}" ${e.id === engine ? 'selected' : ''}>${esc(e.name)}${locked(e) ? `（${TIER[e.tier]}）` : ''}</option>`)
           .join('')}</select>
         <button class="p-x" title="关闭">✕</button>
       </div>

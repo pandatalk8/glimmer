@@ -153,6 +153,16 @@ def poll(fn, timeout=30):
 async def payment_frame(pay, timeout=90):
     end = time.time() + timeout
     while time.time() < end:
+        # 同一邮箱之前勾过“保存到 Link”时，Stripe 会先弹出 Link 验证码页：选“Pay without Link”回到卡号表单
+        for f in pay.frames:  # 这个按钮可能在主页面，也可能在 Link 的 iframe 里
+            try:
+                skip = f.get_by_text('Pay without Link', exact=True)
+                if await skip.count() and await skip.first.is_visible():
+                    await skip.first.click()
+                    await asyncio.sleep(1.5)
+                    break
+            except Exception:
+                pass
         for f in pay.frames:
             if 'elements-inner' not in f.url:
                 continue
@@ -199,8 +209,14 @@ async def fill_card(pay, number):
     if await f.locator('#payment-postalCodeInput').count():
         await f.locator('#payment-postalCodeInput').fill('10001')
     opt = f.locator('#payment-linkOptInInput')
-    # “保存到 Link”默认不勾选，不去点它（自定义控件，点击位置不准会误选 Cash App Pay 等其他付款方式）；
-    # 万一已勾上，填测试手机号满足必填
+    # “保存到 Link”被勾上时（Stripe 有时自动勾选），在页面内直接取消：用鼠标点自定义控件容易点偏、误选别的付款方式；
+    # 一旦存到 Link，同一邮箱下次付款会先弹 Link 验证码页
+    try:
+        await f.evaluate("()=>{const c=document.querySelector('#payment-linkOptInInput'); if(c&&c.checked) c.click();}")
+        await asyncio.sleep(0.5)
+    except Exception:
+        pass
+    # 万一仍勾着，填测试手机号满足必填
     phone = f.locator('#payment-linkMobilePhoneInput')
     if await opt.count() and await opt.is_checked() and await phone.count() and await phone.is_visible():
         await phone.fill('2015550123')
@@ -556,9 +572,12 @@ async def journey5(ctx, sw, eid, a, cus, panel, account, find_tab):
     await pp.locator('[data-pick=engine]').first.click()
     await pp.wait_for_selector('.opt[data-set=deepl]')
     tag = lambda e: pp.locator(f'.opt[data-set={e}] .tag').get_attribute('class')
-    t = {e: await tag(e) for e in ('deepl', 'microsoft', 'deepseek', 'openai')}
-    check('E-01 引擎列表：DeepL、Microsoft 可选（已解锁），DeepSeek 仍标 Premium+ 未解锁，GPT 标“即将开放”',
-          all('pro' in t[e] for e in ('deepl', 'microsoft')) and 'need' in t['deepseek'] and 'soon' in t['openai'], t)
+    avail = admin('GET', '/functions/v1/engines')['engines']  # 服务器配置了 Key 的付费引擎
+    shown = await pp.evaluate("[...document.querySelectorAll('.opt[data-set]')].map(o=>o.dataset.set)")
+    expect = [e for e in ['google', 'deepl', 'microsoft', 'openai', 'gemini', 'deepseek', 'claude'] if e == 'google' or e in avail]
+    t = {e: await tag(e) for e in ('deepl', 'deepseek') if e in avail}
+    check('E-01 引擎列表只显示 Google 与服务器已配置 Key 的引擎；DeepL 已解锁，DeepSeek 仍标 Premium+',
+          shown == expect and 'pro' in t.get('deepl', 'pro') and 'need' in t.get('deepseek', 'need'), f'{shown}（服务器可用：{avail}）')
     await pp.locator('.opt[data-set=deepseek]').click()
     up = await wait_for(lambda: pp.locator('.upsell').count(), 5)
     txt = await pp.locator('.upsell').inner_text() if up else ''
@@ -584,9 +603,11 @@ async def journey5(ctx, sw, eid, a, cus, panel, account, find_tab):
     check('E-02 默认引擎 DeepL（D-09c 选的）整页翻译：译文正常显示', eng == 'deepl' and done >= 3 and errs == 0, f'{eng}，{done} 段，失败 {errs}')
     await web.close()
     pg = await panel()
-    r = await tr(pg, 'microsoft')
-    check('E-03 Microsoft：等级校验通过，提示“服务端尚未配置 Microsoft 的 API Key”',
-          not r.get('ok') and '服务端尚未配置 Microsoft' in (r.get('error') or ''), (r.get('error') or '')[:50])
+    missing = [e for e in ('deepl', 'microsoft') if e not in admin('GET', '/functions/v1/engines')['engines']]
+    rs = {e: await tr(pg, e) for e in missing}
+    check('E-03 没配置 Key 的机器翻译引擎不显示在引擎列表中（E-01 已核对）；绕过界面直接调用也被后端拒绝',
+          all(not r.get('ok') and ('尚未配置' in (r.get('error') or '') or '即将开放' in (r.get('error') or '')) for r in rs.values()),
+          {e: (r.get('error') or '')[:24] for e, r in rs.items()} or '全部已配置')
 
     await sw.evaluate("""()=>chrome.storage.local.set({words:Array.from({length:100},(_,i)=>({w:'word'+i,t:'',url:'',ts:Date.now(),m:false,u:Date.now()}))})""")
     r = await pg.evaluate("chrome.runtime.sendMessage({type:'toggleWord',word:'serendipity',trans:'意外发现',url:'https://example.com'})")
@@ -686,10 +707,10 @@ async def journey6(ctx, sw, eid, a, panel, account):
     await pp.locator('[data-pick=engine]').first.click()
     await pp.wait_for_selector('.opt[data-set=deepseek]')
     tags = await pp.evaluate("[...document.querySelectorAll('.opt[data-set]')].map(o=>[o.dataset.set,o.querySelector('.tag')?.className||''])")
-    tg = dict(tags)
-    check('F-01 首发引擎全部可用：Google、DeepL、Microsoft、DeepSeek、Claude 可选，GPT、Gemini 标“即将开放”，没有未解锁的',
-          len(tags) == 7 and not any('need' in t for _, t in tags) and all('pro' in tg[e] for e in ('deepl', 'microsoft', 'deepseek', 'claude'))
-          and all('soon' in tg[e] for e in ('openai', 'gemini')), tags)
+    avail = admin('GET', '/functions/v1/engines')['engines']
+    expect = [e for e in ['google', 'deepl', 'microsoft', 'openai', 'gemini', 'deepseek', 'claude'] if e == 'google' or e in avail]
+    check('F-01 Premium+ 可用的引擎全部解锁：列表只有 Google 与服务器已配置 Key 的引擎，没有需要升级的项',
+          [e for e, _ in tags] == expect and not any('need' in t for _, t in tags), f'{tags}（服务器可用：{avail}）')
     await pp.locator('.opt[data-set=deepseek]').click()
     await pp.wait_for_timeout(500)
     eng = await sw.evaluate("chrome.storage.local.get('settings').then(r=>r.settings?.engine)")
@@ -735,12 +756,13 @@ async def journey6(ctx, sw, eid, a, panel, account):
     check('F-04b AI 点数用了 85%：面板首页出现“本月 AI 点数已用 85%”，点数卡变金色并提示用完后改用 Google',
           '本月 AI 点数已用 85%' in bar and warn == 1 and '已用 85%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译' in hint, bar.strip()[:30])
 
+    avail = admin('GET', '/functions/v1/engines')['engines']
     errs5 = {}
-    for e in ('openai', 'gemini', 'claude'):
+    for e in [x for x in ('openai', 'gemini', 'claude') if x not in avail]:
         r = await tr(pp, e)
         errs5[e] = r.get('error') or ''
-    check('F-05 GPT、Gemini 提示“即将开放，暂时请使用其他翻译引擎”；Claude 等级校验通过，提示“服务端尚未配置 Claude 的 API Key”',
-          all('即将开放' in errs5[e] for e in ('openai', 'gemini')) and '服务端尚未配置 Claude' in errs5['claude'], {k: v[:24] for k, v in errs5.items()})
+    check('F-05 没配置 Key 的大模型（GPT、Gemini、Claude 中未配置的）不显示；直接调用时后端拒绝（“即将开放”或“服务端尚未配置”），等级校验已通过',
+          all('即将开放' in v or '服务端尚未配置' in v for v in errs5.values()) and not any('需要 Premium' in v for v in errs5.values()), {k: v[:24] for k, v in errs5.items()})
 
     set_usage(points=15_000_000)
     await pp.locator('[data-act=acctRefresh]').click()

@@ -42,6 +42,34 @@ async function backend() {
   return { url, key: cfg.supabaseAnonKey, source, local: /\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url) };
 }
 
+// ---------- 当前可用的付费引擎 ----------
+// 服务器没有配置 API Key（或暂停）的引擎不对用户展示。名单来自后端 engines 接口，按后端地址缓存 30 分钟；
+// 从未取到时视为没有可用的付费引擎（只显示 Google），不会展示用不了的引擎
+const ENGINES_KEY = 'availableEngines';
+const ENGINES_TTL = 30 * 60 * 1000;
+export async function availablePaidEngines({ force = false } = {}) {
+  const { [ENGINES_KEY]: cur } = await chrome.storage.local.get(ENGINES_KEY);
+  let b;
+  try {
+    b = await backend();
+  } catch {
+    return [];
+  }
+  const fresh = cur && cur.url === b.url && Date.now() - cur.at < ENGINES_TTL;
+  if (fresh && !force) return cur.list;
+  try {
+    const res = await fetch(`${b.url}/functions/v1/engines`, { headers: { apikey: b.key } });
+    const data = res.ok ? await res.json() : null;
+    if (Array.isArray(data?.engines)) {
+      await chrome.storage.local.set({ [ENGINES_KEY]: { list: data.engines, url: b.url, at: Date.now() } });
+      return data.engines;
+    }
+  } catch {
+    // 后端暂时连不上：沿用同一后端上次的名单
+  }
+  return cur?.url === b.url ? cur.list : [];
+}
+
 /** 供界面显示：当前连接的后端 */
 export async function backendInfo() {
   try {

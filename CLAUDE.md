@@ -23,10 +23,10 @@
 ## 常用命令
 
 ```bash
-python3 tests/e2e.py          # 核心回归，36 项
+python3 tests/e2e.py          # 核心回归，37 项
 python3 tests/e2e_real.py     # 真实网站与交互，88 项
 python3 tests/e2e_account.py  # 账户与订阅（模拟 Supabase），72 项
-deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅、翻译代理（AI 点数与字符额度）与邮箱域名检查逻辑，30 项
+deno test --allow-env --allow-net --allow-read supabase/functions/  # 后端订阅、翻译代理（AI 点数与字符额度）与邮箱域名检查逻辑，31 项
 python3 tests/e2e_local_billing.py  # 真实联调本地 Supabase + Stripe（需先启动本地后端），24 项
 python3 tests/e2e_local_auth.py     # 本地后端 + Mailpit：重发验证邮件、忘记密码、后端故障改用 Google，6 项
 python3 tests/security_cloud.py   # 安全检查 H-01 ~ H-06：云端越权与插件中没有服务端密钥，8 项，需已登录 Supabase CLI

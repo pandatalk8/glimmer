@@ -5,16 +5,14 @@ import { corsHeaders, json } from '../_shared/http.ts';
 import { adminClient, userFromRequest } from '../_shared/clients.ts';
 import type { Plan } from '../_shared/billing.ts';
 import {
-  charLimitFor, checkAccess, chatFor, deeplTranslate, DEFAULT_DISABLED_ENGINES, DEFAULT_POINT_LIMIT, LLM_ENGINES, llmTranslate,
+  charLimitFor, checkAccess, chatFor, deeplTranslate, DEFAULT_POINT_LIMIT, disabledEngines, LLM_ENGINES, llmTranslate,
   microsoftTranslate, monthKey, pointsFor, ProviderError,
 } from '../_shared/translate.ts';
 
 const num = (name: string) => Number(Deno.env.get(name)) || undefined;
 const POINT_LIMIT = num('POINT_LIMIT_MONTHLY') || DEFAULT_POINT_LIMIT;
 const CHAR_LIMITS = { premium: num('CHAR_LIMIT_PREMIUM'), premium_plus: num('CHAR_LIMIT_PLUS') };
-const DISABLED = new Set(
-  (Deno.env.get('DISABLED_ENGINES') ?? DEFAULT_DISABLED_ENGINES.join(',')).split(',').map((s) => s.trim()).filter(Boolean)
-);
+const DISABLED = disabledEngines(Deno.env.get('DISABLED_ENGINES'));
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });

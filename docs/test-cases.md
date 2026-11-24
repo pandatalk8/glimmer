@@ -57,7 +57,7 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 
 ### 1.5 当前已配置的服务商
 
-后端目前配置了 **DeepL** 和 **DeepSeek** 的 Key。Microsoft、GPT、Gemini、Claude 还没有配置：等级校验通过后，会提示“服务端尚未配置 … 的 API Key”。这算权限检查**通过**（说明请求已越过会员校验），不算缺陷。
+后端目前配置了 **DeepL** 和 **DeepSeek** 的 Key。**没有配置 Key 的引擎不会出现在任何界面中**（面板引擎列表、划词面板、完整设置页、方案页、升级提示卡），以后端 `engines` 接口返回的名单为准；配好 Key 后半小时内（或刷新账户状态后）自动出现。绕过界面直接调用未配置的引擎时，后端提示“服务端尚未配置 … 的 API Key”。
 
 ---
 
@@ -73,7 +73,7 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 | 生词本云同步 | ✗ | ✗ | ✓ | ✓ |
 | DeepL、Microsoft 翻译 | ✗ 需登录 | ✗ 需 Premium | ✓ 合计每月 10 万字符 | ✓ 合计每月 20 万字符 |
 | DeepSeek、Claude | ✗ 需登录 | ✗ 需 Premium+ | ✗ 需 Premium+ | ✓ 每月 1500 万 AI 点数 |
-| GPT、Gemini | 即将开放 | 即将开放 | 即将开放 | 即将开放（标签“即将开放”，不能选择） |
+| 服务器没配置 Key 的引擎（目前为 Microsoft、GPT、Gemini、Claude） | 不显示 | 不显示 | 不显示 | 不显示 |
 | 账户页“本月 AI 点数”卡片 | — | — | — | ✓ |
 | 账户页“本月 DeepL / Microsoft”卡片 | — | — | ✓ | ✓ |
 
@@ -90,7 +90,6 @@ python3 scripts/seed_review_accounts.py                 # 预置测试账号（�
 | 免费版或 Premium 使用大模型 | “该翻译引擎需要 Premium+ 会员，请升级后使用” |
 | Premium+ AI 点数用完 | “本月 AI 点数（1500 万点）已用完，下月 1 日恢复” |
 | DeepL / Microsoft 字符额度用完 | “本月 DeepL / Microsoft 翻译额度（10 万字符）已用完，下月 1 日恢复”（Premium+ 为 20 万字符） |
-| 使用 GPT、Gemini | “OpenAI GPT 即将开放，暂时请使用其他翻译引擎”；面板点选时提示“OpenAI GPT 即将开放，暂时请使用其他引擎” |
 | 免费版第 101 个生词 | “免费版生词本最多 100 个，升级 Premium 不限数量”，带“查看会员方案”按钮 |
 | 面板中点未解锁的引擎 | 升级提示卡：“DeepL 需要 Premium 会员”、价格、权益、“查看会员方案”“以后再说” |
 | 默认引擎不可用，已自动改用 Google | 网页提示“DeepL 需要 Premium 会员，已改用 Google 翻译”（未登录时为“需要登录并开通会员”；AI 点数用完时为“本月 AI 点数已用完，已改用 Google 翻译”，字符额度用完时为“本月 DeepL / Microsoft 翻译额度已用完，已改用 Google 翻译”）；面板首页横幅“DeepL 需要 Premium 会员，正在使用 Google 翻译” |
@@ -235,9 +234,9 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 
 | 编号 | 场景 | 操作步骤 | 预期结果 | 结果 |
 | --- | --- | --- | --- | --- |
-| E-01 | 引擎解锁 | 面板 → 设置 → 翻译引擎 | DeepL、Microsoft 翻译可以选择；大模型仍标“Premium+”并为灰色 | |
+| E-01 | 引擎解锁 | 面板 → 设置 → 翻译引擎 | 只列出 Google 与服务器已配置 Key 的引擎（目前为 Google、DeepL、DeepSeek）；DeepL 可以选择，DeepSeek 仍标“Premium+” | |
 | E-02 | 使用 DeepL 整页翻译 | 选 DeepL，翻译一个英文网页 | 译文正常显示；函数日志中能看到 translate 请求 | |
-| E-03 | 使用 Microsoft | 选 Microsoft 翻译，划词翻译 | 当前未配置 Azure Key，提示“服务端尚未配置 Microsoft 的 API Key”。说明等级校验已通过 | |
+| E-03 | 未配置的引擎不显示 | 查看面板引擎列表、划词面板的引擎下拉框、完整设置页的翻译引擎、方案页 | 都没有 Microsoft（服务器未配置 Azure Key）；配置后会自动出现 | |
 | E-04 | 大模型被拦 | 面板中点 DeepSeek | 弹出升级提示卡“DeepSeek 需要 Premium+ 会员”“$6 / 月 或 $69 / 年”；划词面板手动选 DeepSeek 时显示“该翻译引擎需要 Premium+ 会员…”与“查看会员方案”“改用 Google 翻译” | |
 | E-05 | 生词本不限数量 | 用 C-08 的代码填满 100 个后，再收藏一个 | 收藏成功，共 101 个 | |
 | E-06 | 云同步上传 | 收藏一个新词，等 3 秒 | Studio `words` 表出现该词（`deleted = false`）；生词本页显示“已同步到账号” | |
@@ -256,12 +255,12 @@ chrome.storage.local.set({ words: Array.from({ length: 100 }, (_, i) => ({ w: 'w
 
 | 编号 | 场景 | 操作步骤 | 预期结果 | 结果 |
 | --- | --- | --- | --- | --- |
-| F-01 | 首发引擎全部解锁 | 面板 → 设置 → 翻译引擎 | Google、DeepL、Microsoft、DeepSeek、Claude 都可以选择；GPT、Gemini 标“即将开放”，点选时提示“… 即将开放，暂时请使用其他引擎”；没有需要升级的项 | |
+| F-01 | 可用引擎全部解锁 | 面板 → 设置 → 翻译引擎 | 只列出 Google 与服务器已配置 Key 的引擎（目前为 Google、DeepL、DeepSeek），都可以选择，没有需要升级的项 | |
 | F-02 | DeepSeek 整页翻译 | 选 DeepSeek，翻译一个英文网页 | 译文正常；一屏多段只发少量请求（函数日志） | |
 | F-03 | 用量增加 | F-02 前后各看一次账户页“本月 AI 点数” | 已用点数增加；Studio `usage_monthly` 的 `tokens`、`points`、`requests` 增加，DeepSeek 的 `points` 约为 `tokens` 的 2.5 倍 | |
 | F-04 | 用量卡片 | 账户页 | 两张卡片：“本月 AI 点数 123.5 万 / 1500 万 点”（预置账号）和进度条，注明“每月 1 日重置”；“本月 DeepL / Microsoft 0 / 20 万 字符”。完整设置页“账户与会员”同样显示两项用量与百分比 | |
 | F-04b | 用量预警 | 在 Studio 执行 `update usage_monthly set points = 12750000 where user_id = (select id from profiles where email = 'plus@review.local');`，打开面板 | 面板首页出现“本月 AI 点数已用 85%”，点击进入账户页；点数卡变为金色，提示“已用 85%，用完后大模型会暂停到下月 1 日，期间自动改用 Google 翻译”。达到 100% 时首页显示“本月 AI 点数已用完，大模型暂停到下月 1 日” | |
-| F-05 | 其他大模型 | 划词面板依次选 GPT、Gemini、Claude | GPT、Gemini 在下拉框中显示“（即将开放）”、不能选择；Claude 当前未配置 Key，提示“服务端尚未配置 Claude 的 API Key”（等级校验已通过） | |
+| F-05 | 未配置的大模型不显示 | 查看面板引擎列表与划词面板的引擎下拉框 | 没有 GPT、Gemini、Claude（服务器未配置 Key）；方案页 Premium+ 卡片只列出 DeepSeek | |
 | F-06 | 额度用完 | 默认引擎设为 DeepSeek；在 Studio 的 SQL Editor 执行下方 SQL，再翻译一个英文网页 | 整页自动改用 Google 翻译，网页提示“本月 AI 点数已用完，已改用 Google 翻译”；划词面板手动选 DeepSeek 时显示“本月 AI 点数（1500 万点）已用完，下月 1 日恢复”。注意：已翻译过的段落直接用本机缓存，请换一个没翻过的网页 | |
 | F-06b | 字符额度用完 | 在 Studio 执行 `update usage_monthly set chars = 200000 where user_id = (select id from profiles where email = 'plus@review.local');`，在划词面板手动选 DeepL、Microsoft；默认引擎设为 DeepL 再翻译一个没翻过的网页 | 手动选时显示“本月 DeepL / Microsoft 翻译额度（20 万字符）已用完，下月 1 日恢复”；整页自动改用 Google，网页提示“本月 DeepL / Microsoft 翻译额度已用完，已改用 Google 翻译”；账户页字符卡显示“本月额度已用完”；DeepSeek 不受影响 | |
 | F-07 | 点数用完后其他引擎可用 | F-06 之后改用 DeepL 和 Google | 都能正常翻译 | |

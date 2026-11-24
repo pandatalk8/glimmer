@@ -1,5 +1,5 @@
 // 面板：工具栏弹窗与网页内侧边抽屉共用同一页面
-import { getSettings, saveSettings, ENGINES, hostMatches, canUse, PLAN_NAME, FREE_WORD_LIMIT } from '../src/shared/settings.js';
+import { getSettings, saveSettings, ENGINES, visibleEngines, engineShortNames, hostMatches, canUse, PLAN_NAME, FREE_WORD_LIMIT } from '../src/shared/settings.js';
 import { LANGUAGES, TARGET_LANGUAGES, getLang } from '../src/shared/languages.js';
 import { buildShort } from '../src/shared/build.js';
 import { TERMS } from '../src/shared/config.js';
@@ -57,6 +57,8 @@ const IC = {
 // ---------------- 状态 ----------------
 let S = await getSettings();
 let words = (await chrome.storage.local.get('words')).words || [];
+// 服务器配置了 API Key 的付费引擎；没配置的引擎不在面板中出现
+let avail = await send('engines').catch(() => []);
 let tab = null;
 let host = '';
 let page = { supported: false, active: false };
@@ -82,8 +84,8 @@ const usagePct = () => {
 };
 // 升级提示卡：点到需要会员的功能时，在面板内说明需要的等级、价格和权益
 const OFFER = {
-  premium: { price: '$29 / 年', perks: ['DeepL、Microsoft 专业翻译（每月 10 万字符）', '生词本不限数量', '生词本云同步，换设备不丢'] },
-  premium_plus: { price: '$6 / 月 或 $69 / 年', perks: ['包含 Premium 全部功能', 'DeepSeek、Claude 大模型（GPT、Gemini 即将开放）', '每月 1500 万 AI 点数'] },
+  premium: { price: '$29 / 年', perks: () => [engineShortNames(avail, 'mt') && `${engineShortNames(avail, 'mt')} 专业翻译（每月 10 万字符）`, '生词本不限数量', '生词本云同步，换设备不丢'] },
+  premium_plus: { price: '$6 / 月 或 $69 / 年', perks: () => ['包含 Premium 全部功能', engineShortNames(avail, 'llm') && `${engineShortNames(avail, 'llm')} 大模型`, '每月 1500 万 AI 点数'] },
 };
 function showUpsell(e) {
   document.querySelector('.upsell')?.remove();
@@ -94,7 +96,7 @@ function showUpsell(e) {
   el.innerHTML = `<div class="up-card" role="dialog">
       <div class="up-title">${IC.crown}<span>${esc(e.name)} 需要 ${PLAN_NAME[tier]} 会员</span></div>
       <div class="up-price">${PLAN_NAME[tier]} · ${o.price}</div>
-      <ul>${o.perks.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
+      <ul>${o.perks().filter(Boolean).map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
       <button class="gold" data-up="go">查看会员方案</button>
       ${acct.loggedIn ? '' : '<button class="link up-login" data-up="login">已经是会员？登录</button>'}
       <button class="link" data-up="close">以后再说</button>
@@ -205,23 +207,17 @@ const PICKERS = {
     get: (s) => s.engine,
     set: (v) => ({ engine: v }),
     options: () =>
-      ENGINES.map((e) => [
+      visibleEngines(avail).map((e) => [
         e.id,
         e.name,
-        e.soon
-          ? '<span class="tag soon">即将开放</span>'
-          : e.tier === 'free'
-            ? '<span class="tag free">免费</span>'
-            : `<span class="tag ${canUse(plan(), e.id) ? 'pro' : 'need'}">${PLAN_NAME[e.tier]}</span>`,
+        e.tier === 'free'
+          ? '<span class="tag free">免费</span>'
+          : `<span class="tag ${canUse(plan(), e.id) ? 'pro' : 'need'}">${PLAN_NAME[e.tier]}</span>`,
         e.tier === 'free' ? '浏览器直接翻译' : e.type === 'llm' ? '大模型 · 由微光翻译服务器提供' : '由微光翻译服务器提供',
       ]),
     footer: '<button class="link" data-act="premium">查看会员方案 ' + IC.chev + '</button>',
     // 未解锁的引擎不切换：先在面板内说明需要什么，用户点“查看会员方案”才打开方案页
     guard: (v) => {
-      if (engineOf(v)?.soon) {
-        toast(`${engineOf(v).name} 即将开放，暂时请使用其他引擎`);
-        return false;
-      }
       if (canUse(plan(), v) && (v === 'google' || acct.loggedIn)) return true;
       showUpsell(engineOf(v));
       return false;
