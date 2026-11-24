@@ -34,7 +34,7 @@
 
 入口：面板首页右上角的“Premium”标签（会员时显示为实心的“Premium / Premium+”），或账户页“查看会员方案”。方案页可切换月付、年付，点击“开通”后在新标签页的 Stripe 页面付款。已经是会员时，升级或切换方案在“管理订阅”（Stripe 客户门户）中完成，避免重复订阅。
 
-**用量与额度：** 大模型按服务商返回的输入 + 输出 Token 计数，再按引擎折算为 AI 点数（Claude 1 倍、DeepSeek 2.5 倍、GPT 3.4 倍、Gemini 4.6 倍），Premium+ 每月 1500 万点；DeepL、Microsoft 按字符计数，Premium 合计每月 10 万字符、Premium+ 20 万字符。每月 1 日（UTC）清零；用完后对应引擎暂停到下月，网页翻译自动改用 Google，其他引擎照常可用。成本依据见 [后端部署指南第十节](backend.md)
+**用量与额度：** 大模型按服务商返回的输入 + 输出 Token 计数，再按引擎折算为 AI 点数（Claude 1 倍、DeepSeek 2.5 倍、GPT 3.4 倍、Gemini 4.6 倍），Premium+ 每月 1500 万点；DeepL、Microsoft 按字符计数，Premium 合计每月 10 万字符、Premium+ 20 万字符。每月 1 日（UTC）清零；用完后对应引擎暂停到下月，网页翻译自动改用 Google，其他引擎照常可用。额度设置见 [后端部署指南第十节](backend.md)
 
 服务商的 Key 怎样配置到后端，见 [后端部署指南](backend.md)。
 
