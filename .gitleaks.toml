@@ -1,0 +1,9 @@
+# gitleaks 配置：在默认规则基础上，允许 Supabase 的公开 key 出现在代码中。
+# sb_publishable_…（以及旧版 anon key）设计上就是要放进客户端的公开值，数据安全依靠数据库行级安全（RLS）；
+# service_role / sb_secret_… 等服务端密钥仍按默认规则拦截。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Supabase publishable keys are public by design"
+regexes = ['''sb_publishable_[A-Za-z0-9_-]+''']
